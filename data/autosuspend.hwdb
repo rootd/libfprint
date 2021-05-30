@@ -279,3 +279,7 @@ usb:v2808p9338*
 usb:v298Dp2033*
 usb:v3538p0930*
  ID_AUTOSUSPEND=1
+ 
+# Supported by libfprint driver goodix
+usb:v27c6p5110*
+ID_AUTOSUSPEND=1

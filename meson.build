@@ -121,7 +121,8 @@ default_drivers = [
     'upeksonly',
     'upekts',
     'goodixmoc',
-    'nb1010'
+    'nb1010',
+    'goodix'
 ]
 
 # FIXME: All the drivers should be fixed by adjusting the byte order.
