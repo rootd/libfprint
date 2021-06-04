@@ -30,6 +30,7 @@ struct _FpiDeviceGoodixTLS
   /* device config */
   //   unsigned short dev_type;
   char *fw_ver;
+  char *sensor_psk_hash;
   //   void           (*process_frame) (unsigned short *raw_frame,
   //                                    GSList       ** frames);
   /* end device config */
@@ -115,11 +116,14 @@ goodix_cmd_cb (FpiUsbTransfer *transfer, FpDevice *dev,
       /* just finished receiving */
       self->last_read = g_memdup (transfer->buffer, transfer->actual_length);
       //fp_dbg("%lu", transfer->actual_length);
+      // Some devices send multiple replies, so we need to catch them
+      // 0xb0 equels the ACK packet
+      // Special case: Reading firmware
       if(self->cmd->cmd == read_fw.cmd)
       {
-        if(transfer->actual_length == self->cmd->response_len)
+        if(transfer->actual_length == self->cmd->response_len && self->last_read[4] == 0xb0)
         {
-          // We got ACK, now wait for the firmware string packet
+          // We got ACK, now wait for the firmware version
           G_DEBUG_HERE ();
           goodix_cmd_read (ssm, dev, self->cmd->response_len_2);
         }
@@ -127,6 +131,59 @@ goodix_cmd_cb (FpiUsbTransfer *transfer, FpDevice *dev,
         {
           // Reading the firmware version
           self->fw_ver = g_memdup (&self->last_read[7], self->cmd->response_len_2);
+          G_DEBUG_HERE ();
+          goodix_cmd_done (ssm);
+        }
+      }
+      // Special case: Reading PSK hash
+      else if(self->cmd->cmd == read_psk.cmd)
+      {
+        if(transfer->actual_length == self->cmd->response_len && self->last_read[4] == 0xb0)
+        {
+          // We got ACK, now wait for the PSK
+          G_DEBUG_HERE ();
+          goodix_cmd_read (ssm, dev, self->cmd->response_len_2);
+        }
+        else
+        {
+          /*fp_dbg("%lu", transfer->actual_length);
+          int i;
+          for (i = 16; i < GOODIX_PSK_LEN+16; i++)
+          {
+            fp_dbg("%02X", self->last_read[i]);
+          }*/
+
+          // Reading the PSK
+          self->sensor_psk_hash = g_memdup (&self->last_read[16], GOODIX_PSK_LEN);
+          G_DEBUG_HERE ();
+          goodix_cmd_done (ssm);
+        } 
+      }
+      // Special case: Setting MCU config
+      else if(self->cmd->cmd == mcu_set_config.cmd)
+      {
+        if(transfer->actual_length == self->cmd->response_len && self->last_read[4] == 0xb0)
+        {
+          // We got ACK, now wait for the PSK
+          G_DEBUG_HERE ();
+          goodix_cmd_read (ssm, dev, self->cmd->response_len_2);
+        }
+        else
+        {
+          G_DEBUG_HERE ();
+          goodix_cmd_done (ssm);
+        }
+      }
+      else if(self->cmd->cmd == set_powerdown_scan_frequency.cmd)
+      {
+        if(transfer->actual_length == self->cmd->response_len && self->last_read[4] == 0xb0)
+        {
+          // We got ACK, now wait for the second packet
+          G_DEBUG_HERE ();
+          goodix_cmd_read (ssm, dev, self->cmd->response_len_2);
+        }
+        else
+        {
           G_DEBUG_HERE ();
           goodix_cmd_done (ssm);
         }
@@ -153,19 +210,32 @@ goodix_run_cmd (FpiSsm *ssm,
   FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS (dev);
   FpiUsbTransfer *transfer;
   GCancellable *cancellable = NULL;
-
+  
   self->cmd = cmd;
 
   transfer = fpi_usb_transfer_new (dev);
   transfer->ssm = ssm;
   transfer->short_is_error = TRUE;
-
-  fpi_usb_transfer_fill_bulk_full (transfer,
+  
+  if(cmd->cmd == mcu_set_config.cmd)
+  {
+    // We're sending the mcu_set_config command
+    fpi_usb_transfer_fill_bulk_full (transfer,
+                                   GOODIX_EP_CMD_OUT,
+                                   (guint8 *) cmd->cmd_cfg,
+                                   GOODIX_CMD_LEN * 5,
+                                   NULL);
+  }
+  else
+  {
+    // We're sending any other command
+    fpi_usb_transfer_fill_bulk_full (transfer,
                                    GOODIX_EP_CMD_OUT,
                                    (guint8 *) cmd->cmd,
                                    GOODIX_CMD_LEN,
                                    NULL);
-
+  }
+  
   fpi_usb_transfer_submit (transfer,
                            cmd_timeout,
                            cancellable,
@@ -183,7 +253,13 @@ enum activate_states {
   ACTIVATE_NOP2,
   ACTIVATE_GET_FW_VER,
   ACTIVATE_VERIFY_FW_VER,
-  ACTIVATE_NUM_STATES
+  ACTIVATE_READ_PSK,
+  ACTIVATE_VERIFY_PSK,
+  ACTIVATE_SET_MCU_IDLE,
+  ACTIVATE_SET_MCU_CONFIG,
+  ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY1,
+  ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY2,
+  ACTIVATE_NUM_STATES,
 };
 
 static void
@@ -192,6 +268,8 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
   FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS (dev);
 
   G_DEBUG_HERE ();
+  
+  //int i;
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
@@ -208,18 +286,62 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
       case ACTIVATE_GET_FW_VER:
         goodix_run_cmd(ssm, dev, &read_fw, GOODIX_CMD_TIMEOUT);
         break;
-
+        
       case ACTIVATE_VERIFY_FW_VER:
         if(strcmp(self->fw_ver, GOODIX_FIRMWARE_VERSION_SUPPORTED) == 0)
         {
-          // The firmware version supports the 0xF2 command to directly read from the MCU SRAM
-          fpi_ssm_mark_completed (ssm);
+          // The firmware version is supported
+          fpi_ssm_next_state (ssm);
         }
         else
         {
           // The firmware version is unsupported
           fpi_ssm_mark_failed (ssm, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "Unsupported firmware!"));
         }
+        break;
+        
+      case ACTIVATE_READ_PSK:
+        goodix_run_cmd(ssm, dev, &read_psk, GOODIX_CMD_TIMEOUT);
+        break;
+        
+      case ACTIVATE_VERIFY_PSK:        
+        /*for (i = 0; i < GOODIX_PSK_LEN; i++)
+        {
+          fp_dbg("%02X", self->sensor_psk_hash[i]);
+        }
+        
+        fp_dbg("-----");
+        
+        for (i = 0; i < GOODIX_PSK_LEN; i++)
+        {
+          fp_dbg("%02X", zero_PSK_hash[i]);
+        }*/          
+        
+        // The PSK hash matches the Zero-PSK hash  
+        if(memcmp(self->sensor_psk_hash, &zero_PSK_hash, sizeof(&self->sensor_psk_hash)) == 0)
+        {
+          //fpi_ssm_mark_completed (ssm);
+          fpi_ssm_next_state (ssm);
+        }
+        else
+        {
+          // The PSK hash doesn't match
+          fpi_ssm_mark_failed (ssm, fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "PSK doesn't match!"));
+        }
+        break;
+        
+      case ACTIVATE_SET_MCU_IDLE:
+        goodix_run_cmd(ssm, dev, &mcu_set_idle, GOODIX_CMD_TIMEOUT);
+        break;
+        
+      case ACTIVATE_SET_MCU_CONFIG:
+        goodix_run_cmd(ssm, dev, &mcu_set_config, GOODIX_CMD_TIMEOUT);
+        break;
+        
+      case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY1:
+      case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY2:
+        goodix_run_cmd(ssm, dev, &set_powerdown_scan_frequency, GOODIX_CMD_TIMEOUT);
+        break;
     }
 }
 
@@ -351,8 +473,8 @@ fpi_device_goodixtls_class_init (FpiDeviceGoodixTLSClass *class)
   FpDeviceClass *dev_class = FP_DEVICE_CLASS (class);
   FpImageDeviceClass *img_class = FP_IMAGE_DEVICE_CLASS (class);
 
-  dev_class->id = "goodixtls";
-  dev_class->full_name = "Goodix TLS Fingerprint Sensor";
+  dev_class->id = "goodix";
+  dev_class->full_name = "Goodix 5110 Fingerprint Sensor";
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = goodix_id_table;
   dev_class->scan_type = FP_SCAN_TYPE_SWIPE;
