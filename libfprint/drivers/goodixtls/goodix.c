@@ -351,8 +351,8 @@ fpi_device_goodixtls_class_init (FpiDeviceGoodixTLSClass *class)
   FpDeviceClass *dev_class = FP_DEVICE_CLASS (class);
   FpImageDeviceClass *img_class = FP_IMAGE_DEVICE_CLASS (class);
 
-  dev_class->id = "goodix";
-  dev_class->full_name = "Goodix 5110 Fingerprint Sensor";
+  dev_class->id = "goodixtls";
+  dev_class->full_name = "Goodix TLS Fingerprint Sensor";
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = goodix_id_table;
   dev_class->scan_type = FP_SCAN_TYPE_SWIPE;
