@@ -187,9 +187,7 @@ foreach driver: drivers
     ]
     endif
     if driver == 'goodixtls'
-    drivers_sources += [
-        'drivers/goodixtls/goodix.c',
-    ]
+    drivers_sources += ['drivers/goodixtls/goodix.c', 'drivers/goodixtls/goodixtls.c']
     endif
 endforeach
 
@@ -241,6 +239,7 @@ deps = [
     mathlib_dep,
     nss_dep,
     openssl_dep,
+    threads_dep,
 ]
 
 # These are empty and only exist so that the include directories are created
