@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <pthread.h>
 
 #define GOODIX_VEND_ID 0x27c6
 
@@ -51,6 +52,8 @@ struct goodix_cmd
   uint8_t cmd_cfg[GOODIX_CMD_LEN * 5];
   int response_len;
   int response_len_2;
+  int response_len_3;
+  int response_len_4;
 };
 
 static const struct goodix_cmd nop = {
@@ -110,6 +113,14 @@ static const struct goodix_cmd set_powerdown_scan_frequency = {
   .cmd = {0xA0, 0x06, 0x00, 0xA6, 0x94, 0x03, 0x00, 0x64, 0x00, 0xAF},
   .response_len = GOODIX_ACK_LEN,
   .response_len_2 = 10,
+};
+
+static const struct goodix_cmd mcu_request_tls_connection = {
+  .cmd = {0xA0, 0x06, 0x00, 0xA6, 0xD0, 0x03, 0x00, 0x00, 0x00, 0xD7},
+  .response_len = GOODIX_ACK_LEN,
+  .response_len_2 = 56,
+  .response_len_3 = 64,
+  .response_len_4 = 64,
 };
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTLS, fpi_device_goodixtls, FPI, DEVICE_GOODIXTLS,

@@ -22,37 +22,36 @@
 
 #include "drivers_api.h"
 #include "goodix.h"
+#include "goodixtls.h"
 
 struct _FpiDeviceGoodixTLS
 {
   FpImageDevice parent;
 
-  /* device config */
-  //   unsigned short dev_type;
+  pthread_t TLS_server_thread;
+  int TLS_server_sock;
+  SSL_CTX *TLS_server_ctx;
+
   char *fw_ver;
   char *sensor_psk_hash;
-  //   void           (*process_frame) (unsigned short *raw_frame,
-  //                                    GSList       ** frames);
-  /* end device config */
+  char *tls_msg_1;
+  char *tls_msg_2;
+  char *tls_msg_3;
 
-  /* commands */
   const struct goodix_cmd *cmd;
   int cmd_timeout;
-  /* end commands */
+  int cmd_recv_counter;
 
-  /* state */
+  FpiUsbTransfer *transfer1;
+  GCancellable *cancellable1;
+
+  FpiUsbTransfer *transfer2;
+  GCancellable *cancellable2;
+
   gboolean        active;
   gboolean        deactivating;
   unsigned char  *last_read;
-  // unsigned char   calib_atts_left;
-  // unsigned char   calib_status;
   unsigned short *background;
-  // unsigned char   frame_width;
-  // unsigned char   frame_height;
-  // unsigned char   raw_frame_height;
-  // int             num_frames;
-  // GSList         *frames;
-  /* end state */
 };
 G_DEFINE_TYPE (FpiDeviceGoodixTLS, fpi_device_goodixtls, FP_TYPE_IMAGE_DEVICE);
 
@@ -84,7 +83,7 @@ goodix_cmd_read (FpiSsm *ssm, FpDevice *dev, int response_len)
 
   transfer = fpi_usb_transfer_new (dev);
   transfer->ssm = ssm;
-  transfer->short_is_error = TRUE;
+  transfer->short_is_error = FALSE;
 
   fpi_usb_transfer_fill_bulk (transfer,
                               GOODIX_EP_CMD_IN,
@@ -174,6 +173,7 @@ goodix_cmd_cb (FpiUsbTransfer *transfer, FpDevice *dev,
           goodix_cmd_done (ssm);
         }
       }
+      // Special case: Setting scan frequency
       else if(self->cmd->cmd == set_powerdown_scan_frequency.cmd)
       {
         if(transfer->actual_length == self->cmd->response_len && self->last_read[4] == 0xb0)
@@ -185,6 +185,62 @@ goodix_cmd_cb (FpiUsbTransfer *transfer, FpDevice *dev,
         else
         {
           G_DEBUG_HERE ();
+          goodix_cmd_done (ssm);
+        }
+      }
+      // Special case: Requesting TLS connection
+      else if(self->cmd->cmd == mcu_request_tls_connection.cmd)
+      {
+        if(transfer->actual_length == self->cmd->response_len && self->last_read[4] == 0xb0)
+        {
+            // We got ACK, now wait for the second packet
+            self->cmd_recv_counter = 1;
+            G_DEBUG_HERE ();
+            goodix_cmd_read (ssm, dev, self->cmd->response_len_2);
+        }
+        else if(self->cmd_recv_counter == 1)
+        {
+          // Read 56 byte packet
+          self->cmd_recv_counter = 2;
+          G_DEBUG_HERE ();
+          self->tls_msg_1 = g_memdup (&self->last_read, self->cmd->response_len_2);
+          goodix_cmd_read (ssm, dev, self->cmd->response_len_3);
+        }
+        /*else if(self->cmd_recv_counter == 2)
+        {
+          // Read first 64 byte packet
+          self->cmd_recv_counter = 3;
+          G_DEBUG_HERE ();
+          self->tls_msg_2 = g_memdup (&self->last_read, self->cmd->response_len_3);
+          goodix_cmd_read (ssm, dev, self->cmd->response_len_4);
+        }*/
+        else
+        {
+          // Read second 64 byte packet
+          self->cmd_recv_counter = 0;
+          G_DEBUG_HERE ();
+          self->tls_msg_2 = g_memdup (&self->last_read, self->cmd->response_len_3);
+
+          fp_dbg("\n");
+          
+          int i;
+          for (i = 0; i < self->cmd->response_len_2; i++)
+          {
+            fp_dbg("%02X", self->tls_msg_1[i]);
+          }
+          fp_dbg("\n");
+          for (i = 0; i < self->cmd->response_len_3; i++)
+          {
+            fp_dbg("%02X", self->tls_msg_2[i]);
+          }
+          
+          fp_dbg("\n");
+          /*for (i = 0; i < 64; i++)
+          {
+            fp_dbg("%02X", self->tls_msg_3[i]);
+          }*/
+          fp_dbg("\n");
+
           goodix_cmd_done (ssm);
         }
       }
@@ -242,6 +298,71 @@ goodix_run_cmd (FpiSsm *ssm,
                            goodix_cmd_cb,
                            NULL);
 }
+
+/* ------------------------------------------------------------------------------- */
+
+/* ---- TLS SECTION START ---- */
+
+enum tls_states {
+  TLS_SERVER_INIT,
+  TLS_SERVER_HANDSHAKE_INIT,
+  //TLS_MCU_REQUEST_CONNECTION,
+  TLS_NUM_STATES,
+};
+
+static void
+tls_run_state (FpiSsm *ssm, FpDevice *dev)
+{
+  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS (dev);
+
+  G_DEBUG_HERE ();
+  
+  //int i;
+
+  switch (fpi_ssm_get_cur_state (ssm))
+    {
+      // NOP seems to do nothing, but the Windows driver does it in places too
+      case TLS_SERVER_INIT:
+        TLS_server_init(ssm);
+        break;
+
+      case TLS_SERVER_HANDSHAKE_INIT:
+        TLS_server_handshake_init();
+        break;
+      
+      /*case TLS_MCU_REQUEST_CONNECTION:
+        goodix_run_cmd(ssm, dev, &mcu_request_tls_connection, GOODIX_CMD_TIMEOUT);
+        break;*/
+    }
+}
+
+static void
+tls_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
+{
+  FpImageDevice *idev = FP_IMAGE_DEVICE (dev);
+
+  G_DEBUG_HERE ();
+
+  fpi_image_device_activate_complete (idev, error);
+
+}
+
+static void
+goodix_tls (FpImageDevice *dev)
+{
+  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS (dev);
+
+  G_DEBUG_HERE ();
+  goodix_dev_reset_state (self);
+
+  FpiSsm *ssm =
+    fpi_ssm_new (FP_DEVICE (dev), tls_run_state,
+                 TLS_NUM_STATES);
+
+  fpi_ssm_start (ssm, tls_complete);
+}
+
+/* ---- TLS SECTION END ---- */
 
 /* ------------------------------------------------------------------------------- */
 
@@ -352,8 +473,16 @@ activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
 
   G_DEBUG_HERE ();
 
-  fpi_image_device_activate_complete (idev, error);
-
+  if(error)
+  {
+    fpi_image_device_session_error (dev, error);
+  }
+  else
+  {
+    fp_dbg("Activate completed\n");
+    fpi_image_device_activate_complete (idev, error);
+    goodix_tls (idev);
+  }
 }
 
 static void
@@ -436,6 +565,9 @@ dev_change_state (FpImageDevice *dev, FpiImageDeviceState state)
   //FpiDeviceGoodix *self = FPI_DEVICE_GOODIX (dev);
 
   G_DEBUG_HERE ();
+
+  /*if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
+    goodix_tls (dev);*/
 }
 
 static void
