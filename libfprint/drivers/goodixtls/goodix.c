@@ -22,7 +22,6 @@
 
 #include "drivers_api.h"
 #include "goodix.h"
-#include "goodixtls.h"
 
 struct _FpiDeviceGoodixTLS
 {
