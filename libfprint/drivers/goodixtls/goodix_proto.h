@@ -21,7 +21,10 @@
 
 #pragma once
 
-#define GOODIX_MAX_PACKET_SIZE 64
+#include <glib.h>
+
+#define FLAGS_MESSAGE_PROTOCOL 0xa0
+#define FLAGS_TRANSPORT_LAYER_SECURITY 0xb0
 
 #define COMMAND_NOP 0x00
 #define COMMAND_MCU_GET_IMAGE 0x20
@@ -48,3 +51,12 @@
 #define COMMAND_WRITE_FIRMWARE 0xf0
 #define COMMAND_READ_FIRMWARE 0xf2
 #define COMMAND_CHECK_FIRMWARE 0xf4
+
+guint8 goodix_calculate_checksum(gpointer data, guint32 length);
+
+guint32 goodix_encode_message_pack(gpointer* payload, guint8 flags,
+                                   gpointer data, guint16 length);
+
+guint32 goodix_encode_message_protocol(gpointer* payload, guint8 command,
+                                       gpointer data, guint16 length,
+                                       gboolean calculate_checksum);

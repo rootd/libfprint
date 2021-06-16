@@ -29,7 +29,7 @@
 
 #define GOODIX_VEND_ID 0x27c6
 
-#define GOODIX_CMD_LEN 64
+#define GOODIX_MAX_PAYLOAD_LEN 64
 #define GOODIX_EP_CMD_OUT 0x1
 #define GOODIX_EP_CMD_IN 0x81
 
@@ -37,8 +37,8 @@
 // NOP)
 #define GOODIX_CMD_SKIP_READ -1
 
-// 10 seconds USB read timeout
-#define GOODIX_CMD_TIMEOUT 10000
+// 1 seconds USB timeout
+#define GOODIX_COMMAND_TIMEOUT 1000
 
 #define GOODIX_FIRMWARE_VERSION_SUPPORTED "GF_ST411SEC_APP_12109"
 
@@ -52,8 +52,8 @@ char zero_PSK_hash[] = {0xba, 0x1a, 0x86, 0x03, 0x7c, 0x1d, 0x3c, 0x71,
                         0x85, 0xb6, 0x77, 0xe8, 0xdb, 0xd7, 0x2d, 0x43};
 
 struct goodix_cmd {
-  guint8 cmd[GOODIX_CMD_LEN];
-  guint8 cmd_cfg[GOODIX_CMD_LEN * 5];
+  guint8 cmd[GOODIX_MAX_PAYLOAD_LEN];
+  guint8 cmd_cfg[GOODIX_MAX_PAYLOAD_LEN * 5];
   gint response_len;
   gint response_len_2;
   gint response_len_3;

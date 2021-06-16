@@ -22,6 +22,7 @@
 #define FP_COMPONENT "goodixtls"
 
 #include "drivers_api.h"
+#include "goodix_proto.h"
 #include "goodix.h"
 
 struct _FpiDeviceGoodixTLS {
@@ -240,12 +241,13 @@ static void goodix_run_cmd(FpiSsm *ssm, FpDevice *dev,
   if (cmd->cmd == mcu_set_config.cmd) {
     // We're sending the mcu_set_config command
     fpi_usb_transfer_fill_bulk_full(transfer, GOODIX_EP_CMD_OUT,
-                                    (guint8 *)cmd->cmd_cfg, GOODIX_CMD_LEN * 5,
-                                    NULL);
+                                    (guint8 *)cmd->cmd_cfg,
+                                    GOODIX_MAX_PAYLOAD_LEN * 5, NULL);
   } else {
     // We're sending any other command
     fpi_usb_transfer_fill_bulk_full(transfer, GOODIX_EP_CMD_OUT,
-                                    (guint8 *)cmd->cmd, GOODIX_CMD_LEN, NULL);
+                                    (guint8 *)cmd->cmd, GOODIX_MAX_PAYLOAD_LEN,
+                                    NULL);
   }
 
   fpi_usb_transfer_submit(transfer, cmd_timeout, cancellable, goodix_cmd_cb,
@@ -283,7 +285,7 @@ static void tls_run_state(FpiSsm *ssm, FpDevice *dev) {
 
       /*case TLS_MCU_REQUEST_CONNECTION:
         goodix_run_cmd(ssm, dev, &mcu_request_tls_connection,
-        GOODIX_CMD_TIMEOUT); break;*/
+        GOODIX_COMMAND_TIMEOUT); break;*/
   }
 }
 
@@ -339,15 +341,15 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
     // NOP seems to do nothing, but the Windows driver does it in places too
     case ACTIVATE_NOP1:
     case ACTIVATE_NOP2:
-      goodix_run_cmd(ssm, dev, &nop, GOODIX_CMD_TIMEOUT);
+      goodix_run_cmd(ssm, dev, &nop, GOODIX_COMMAND_TIMEOUT);
       break;
 
     case ACTIVATE_ENABLE_CHIP:
-      goodix_run_cmd(ssm, dev, &enable_chip, GOODIX_CMD_TIMEOUT);
+      goodix_run_cmd(ssm, dev, &enable_chip, GOODIX_COMMAND_TIMEOUT);
       break;
 
     case ACTIVATE_GET_FW_VER:
-      goodix_run_cmd(ssm, dev, &read_fw, GOODIX_CMD_TIMEOUT);
+      goodix_run_cmd(ssm, dev, &read_fw, GOODIX_COMMAND_TIMEOUT);
       break;
 
     case ACTIVATE_VERIFY_FW_VER:
@@ -363,7 +365,7 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       break;
 
     case ACTIVATE_READ_PSK:
-      goodix_run_cmd(ssm, dev, &read_psk, GOODIX_CMD_TIMEOUT);
+      goodix_run_cmd(ssm, dev, &read_psk, GOODIX_COMMAND_TIMEOUT);
       break;
 
     case ACTIVATE_VERIFY_PSK:
@@ -393,17 +395,17 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       break;
 
     case ACTIVATE_SET_MCU_IDLE:
-      goodix_run_cmd(ssm, dev, &mcu_set_idle, GOODIX_CMD_TIMEOUT);
+      goodix_run_cmd(ssm, dev, &mcu_set_idle, GOODIX_COMMAND_TIMEOUT);
       break;
 
     case ACTIVATE_SET_MCU_CONFIG:
-      goodix_run_cmd(ssm, dev, &mcu_set_config, GOODIX_CMD_TIMEOUT);
+      goodix_run_cmd(ssm, dev, &mcu_set_config, GOODIX_COMMAND_TIMEOUT);
       break;
 
     case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY1:
     case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY2:
       goodix_run_cmd(ssm, dev, &set_powerdown_scan_frequency,
-                     GOODIX_CMD_TIMEOUT);
+                     GOODIX_COMMAND_TIMEOUT);
       break;
   }
 }
@@ -462,7 +464,7 @@ static void goodix_dev_reset_state(FpiDeviceGoodixTLS *goodixdev) {
   G_DEBUG_HERE();
 
   goodixdev->cmd = NULL;
-  goodixdev->cmd_timeout = GOODIX_CMD_TIMEOUT;
+  goodixdev->cmd_timeout = GOODIX_COMMAND_TIMEOUT;
 
   g_free(goodixdev->last_read);
   goodixdev->last_read = NULL;
