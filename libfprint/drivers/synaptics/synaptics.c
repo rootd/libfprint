@@ -32,7 +32,6 @@ static void compose_and_send_identify_msg (FpDevice *device);
 
 static const FpIdEntry id_table[] = {
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00BD,  },
-  { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00E9,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00DF,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00F9,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00FC,  },
@@ -993,13 +992,18 @@ delete_msg_cb (FpiDeviceSynaptics *self,
       break;
 
     case BMKT_RSP_DEL_USER_FP_FAIL:
-      fp_info ("Failed to delete enrolled user: %d", resp->result);
-      if (resp->result == BMKT_FP_DATABASE_NO_RECORD_EXISTS)
-        fpi_device_delete_complete (device,
-                                    fpi_device_error_new (FP_DEVICE_ERROR_DATA_NOT_FOUND));
+      if (resp->result == BMKT_FP_DATABASE_NO_RECORD_EXISTS ||
+          resp->result == BMKT_FP_DATABASE_EMPTY)
+        {
+          fp_info ("Database no record");
+          fpi_device_delete_complete (device, NULL);
+        }
       else
-        fpi_device_delete_complete (device,
-                                    fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+        {
+          fp_info ("Failed to delete enrolled user: %d", resp->result);
+          fpi_device_delete_complete (device,
+                                      fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+        }
       break;
 
     case BMKT_RSP_DEL_USER_FP_OK:
@@ -1096,14 +1100,18 @@ prob_msg_cb (FpiDeviceSynaptics *self,
 {
   GUsbDevice *usb_dev = NULL;
   g_autofree gchar *serial = NULL;
+  GError *err = NULL;
 
   usb_dev = fpi_device_get_usb_device (FP_DEVICE (self));
 
   if (error)
     {
+      if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        err = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "unsupported firmware version");
+
       g_usb_device_close (usb_dev, NULL);
-      fpi_device_probe_complete (FP_DEVICE (self), NULL, NULL,
-                                 fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "unsupported firmware version"));
+      fpi_device_probe_complete (FP_DEVICE (self), NULL, NULL, err);
+      g_clear_error (&error);
       return;
     }
 
@@ -1112,13 +1120,17 @@ prob_msg_cb (FpiDeviceSynaptics *self,
   else
     serial = g_usb_device_get_string_descriptor (usb_dev,
                                                  g_usb_device_get_serial_number_index (usb_dev),
-                                                 &error);
+                                                 &err);
 
   /* BMKT_OPERATION_DENIED is returned if the sensor is already initialized */
   if (resp->result == BMKT_SUCCESS || resp->result == BMKT_OPERATION_DENIED)
     {
       g_usb_device_close (usb_dev, NULL);
-      fpi_device_probe_complete (FP_DEVICE (self), serial, NULL, error);
+      fpi_device_probe_complete (FP_DEVICE (self), serial, NULL, err);
+    }
+  else if (resp->result == BMKT_FP_SYSTEM_BUSY)
+    {
+      synaptics_sensor_cmd (self, self->cmd_seq_num, BMKT_CMD_CANCEL_OP, NULL, 0, NULL);
     }
   else
     {
@@ -1241,6 +1253,9 @@ fps_init_msg_cb (FpiDeviceSynaptics *self,
 {
   if (error)
     {
+      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        g_clear_error (&error);
+
       fpi_device_open_complete (FP_DEVICE (self), error);
       return;
     }
@@ -1249,6 +1264,10 @@ fps_init_msg_cb (FpiDeviceSynaptics *self,
   if (resp->result == BMKT_SUCCESS || resp->result == BMKT_OPERATION_DENIED)
     {
       fpi_device_open_complete (FP_DEVICE (self), NULL);
+    }
+  else if (resp->result == BMKT_FP_SYSTEM_BUSY)
+    {
+      synaptics_sensor_cmd (self, self->cmd_seq_num, BMKT_CMD_CANCEL_OP, NULL, 0, NULL);
     }
   else
     {
