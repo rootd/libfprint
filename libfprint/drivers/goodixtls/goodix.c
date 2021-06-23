@@ -23,239 +23,639 @@
 
 #include "drivers_api.h"
 #include "goodix_proto.h"
+#include "goodixtls.h"
 #include "goodix.h"
 
-struct _FpiDeviceGoodixTLS {
+struct _FpiDeviceGoodixTls {
   FpImageDevice parent;
 
-  pthread_t TLS_server_thread;
-  gint TLS_server_sock;
-  SSL_CTX *TLS_server_ctx;
+  pthread_t tls_server_thread;
+  gint tls_server_sock;
+  SSL_CTX *tls_server_ctx;
 
-  char *fw_ver;
-  char *sensor_psk_hash;
-  char *tls_msg_1;
-  char *tls_msg_2;
-  char *tls_msg_3;
+  guint8 current_cmd;
+  guint8 current_cmd;
 
-  const struct goodix_cmd *cmd;
-  gint cmd_timeout;
-  gint cmd_recv_counter;
+  gpointer current_data;
+  guint16 current_data_len;
 
-  FpiUsbTransfer *transfer1;
-  GCancellable *cancellable1;
-
-  FpiUsbTransfer *transfer2;
-  GCancellable *cancellable2;
+  FpiUsbTransfer *read_transfer;
+  GCancellable *read_cancellable;
 
   gboolean active;
-  gboolean deactivating;
-  unsigned char *last_read;
-  unsigned short *background;
 };
-G_DEFINE_TYPE(FpiDeviceGoodixTLS, fpi_device_goodixtls, FP_TYPE_IMAGE_DEVICE);
 
-static void goodix_cmd_done(FpiSsm *ssm) {
-  G_DEBUG_HERE();
-  fpi_ssm_next_state(ssm);
+G_DEFINE_TYPE(FpiDeviceGoodixTls, fpi_device_goodixtls, FP_TYPE_IMAGE_DEVICE);
+
+gchar *data_to_str(gpointer data, gsize data_len) {
+  gchar *data_str = g_malloc(2 * data_len + 1);
+
+  for (gsize i = 0; i < data_len; i++)
+    sprintf((gchar *)data_str + 2 * i, "%02X", *((guint8 *)data + i));
+
+  return data_str;
 }
 
-static void goodix_cmd_read(FpiSsm *ssm, FpDevice *dev, gint response_len) {
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiUsbTransfer *transfer;
-  GCancellable *cancellable = NULL;
-  // int response_len = self->cmd->response_len;
+/* ---- GOODIX SECTION START ---- */
+
+static void goodix_receive_data(FpiSsm *ssm, FpDevice *dev, guint timeout) {
+  FpiUsbTransfer *transfer = fpi_usb_transfer_new(dev);
 
   G_DEBUG_HERE();
 
-  if (self->cmd->response_len == GOODIX_CMD_SKIP_READ) {
-    fp_dbg("skipping read, not expecting anything");
-    goodix_cmd_done(ssm);
-    return;
-  }
-
-  g_clear_pointer(&self->last_read, g_free);
-
-  transfer = fpi_usb_transfer_new(dev);
   transfer->ssm = ssm;
   transfer->short_is_error = FALSE;
 
-  fpi_usb_transfer_fill_bulk(transfer, GOODIX_EP_CMD_IN, response_len);
+  fpi_usb_transfer_fill_bulk(transfer, GOODIX_EP_IN, GODDIX_MAX_DATA_READ);
 
-  fpi_usb_transfer_submit(transfer, self->cmd_timeout, cancellable,
-                          goodix_cmd_cb, NULL);
+  fpi_usb_transfer_submit(transfer, timeout, NULL, goodix_receive_data_cb,
+                          NULL);
 }
 
-static void goodix_cmd_cb(FpiUsbTransfer *transfer, FpDevice *dev,
-                          gpointer user_data, GError *error) {
+static void goodix_cmd_done(FpiSsm *ssm, FpDevice *dev, guint8 cmd) {
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+
+  G_DEBUG_HERE();
+
+  if (self->current_cmd != cmd) {
+    // Received a command that is not running. This should not happen.
+    fp_warn("Command 0x%02X is done but the runnning command is 0x%02X", cmd,
+            self->current_cmd);
+    return;
+  }
+
+  fpi_ssm_next_state(ssm);
+}
+
+static void goodix_pack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
+                               guint16 data_len, GDestroyNotify data_destroy) {
+  guint8 *flags;
+  gpointer payload;
+  guint16 payload_len, payload_ptr_len;
+  GError *error = NULL;
+
+  payload_ptr_len = goodix_decode_pack(&flags, &payload, &payload_len, data,
+                                       data_len, data_destroy, &error);
+
+  if (error) {
+    fpi_ssm_mark_failed(ssm, error);
+    return;
+  }
+
+  if (payload_ptr_len < payload_len) {
+    // Packet is not full, we still need data. Starting to read again.
+    goodix_receive_data(ssm, dev, GOODIX_TIMEOUT);
+    return;
+  }
+
+  fp_dbg("Received pack: flags=0x%02X, payload=%s", flags,
+         data_to_str(payload, payload_len));
+
+  switch (flags) {
+    case GOODIX_FLAGS_MSG_PROTOCOL:
+      // Message protocol. Decoding it.
+      data = payload;
+      length =
+          goodix_decode_protocol(&cmd, &invalid_checksum, &payload,
+                                 &payload_len, data, length, g_free, &error);
+
+      if (error) goto failed;
+
+      if (length < payload_len) {
+        // Command is not full but packet is since we checked that before.
+        // This means that something when wrong. This should never happen.
+        // Raising an error.
+        g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                    "Invalid message protocol length: %d bytes / %d bytes",
+                    length, payload_len);
+        goto failed;
+      }
+
+      if (invalid_checksum) {
+        g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                            "Invalid message protocol checksum");
+        goto failed;
+      }
+
+      fp_dbg("Received command: cmd=0x%02X, invalid_checksum=%d, payload=%s",
+             cmd, invalid_checksum, data_to_str(payload, payload_len));
+
+      switch (cmd) {
+        case GOODIX_CMD_ACK:
+          // Ack reply. Decoding it.
+          data = payload;
+          need_config = goodix_decode_ack(&cmd, data, length, g_free, &error);
+
+          if (error) goto failed;
+
+          if (need_config) fp_warn("MCU need to be configured");
+
+          switch (cmd) {
+            case GOODIX_CMD_NOP:
+              fp_warn(
+                  "Received nop ack, device might be in application "
+                  "production "
+                  "mode");
+              break;
+            case GOODIX_CMD_MCU_GET_IMAGE:
+            case GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN:
+              goodix_receive_data(ssm, dev, 0);
+              return;
+            case GOODIX_CMD_MCU_SWITCH_TO_FDT_UP:
+              goodix_receive_data(ssm, dev, 0);
+              return;
+            case GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE:
+              break;
+            case GOODIX_CMD_NAV_0:
+              goodix_cmd_done(ssm, dev, GOODIX_CMD_NAV_0);
+              break;
+            case GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE:
+              goodix_cmd_done(ssm, dev, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE);
+              break;
+            case GOODIX_CMD_WRITE_SENSOR_REGISTER:
+              goodix_cmd_done(ssm, dev, GOODIX_CMD_WRITE_SENSOR_REGISTER);
+            case GOODIX_CMD_READ_SENSOR_REGISTER:
+            case GOODIX_CMD_UPLOAD_CONFIG_MCU:
+            case GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY:
+              break;
+            case GOODIX_CMD_ENABLE_CHIP:
+              goodix_cmd_done(ssm, dev, GOODIX_CMD_ENABLE_CHIP);
+            case GOODIX_CMD_RESET:
+              break;
+            case GOODIX_CMD_MCU_ERASE_APP:
+              goodix_cmd_done(ssm, dev, GOODIX_CMD_MCU_ERASE_APP);
+            case GOODIX_CMD_READ_OTP:
+            case GOODIX_CMD_FIRMWARE_VERSION:
+            case GOODIX_CMD_QUERY_MCU_STATE:
+            case GOODIX_CMD_ACK:
+            case GOODIX_CMD_REQUEST_TLS_CONNECTION:
+              break;
+            case GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED:
+              goodix_cmd_done(ssm, dev,
+                              GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED);
+            case GOODIX_CMD_PRESET_PSK_WRITE_R:
+            case GOODIX_CMD_PRESET_PSK_READ_R:
+              break;
+            default:
+              // Unknown command. Raising an error.
+              g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                          "Invalid ack command: 0x%02X", cmd);
+              goto failed;
+          }
+          break;
+
+        default:
+          // Unknown command. Raising an error.
+          g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                      "Invalid message protocol command: 0x%02X", cmd);
+          goto failed;
+      }
+      break;
+
+    case GOODIX_FLAGS_TLS:
+      // TLS message sending it to TLS server.
+      // TODO
+      break;
+
+    default:
+      // Unknown flags. Raising an error.
+      g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                  "Invalid message pack flags: 0x%02X", flags);
+      goto failed;
+  }
+
+  g_clear_pointer(&self->current_data, g_free);
+  self->current_data_len = 0;
+}
+
+static void goodix_payload_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
+                                  gsize data_len, GDestroyNotify data_destroy) {
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+
+  self->current_data =
+      g_realloc(self->current_data, self->current_data_len + data_len);
+  memcpy((guint8 *)self->current_data + self->current_data_len, data, data_len);
+  if (data_destroy) data_destroy(data);
+  self->current_data_len = self->current_data_len + data_len;
+
+  goodix_pack_handle(ssm, dev, self->current_data, self->current_data_len,
+                     NULL);
+}
+
+static void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
+                                   gpointer user_data, GError *error) {
   FpiSsm *ssm = transfer->ssm;
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+
+  guint8 flags, cmd;
+  guint16 payload_len, length;
+  gpointer payload, data;
+  gboolean invalid_checksum, need_config;
 
   G_DEBUG_HERE();
 
   if (error) {
-    /* XXX: In the cancellation case we used to not
-     *      mark the SSM as failed?! */
-    fpi_ssm_mark_failed(transfer->ssm, error);
+    // XXX: In the cancellation case we used to not mark the SSM as failed?
+    fpi_ssm_mark_failed(ssm, error);
     return;
   }
 
-  /* XXX: We used to reset the device in error cases! */
-  if (transfer->endpoint & FPI_USB_ENDPOINT_IN) {
-    /* just finished receiving */
-    self->last_read = g_memdup(transfer->buffer, transfer->actual_length);
-    // fp_dbg("%lu", transfer->actual_length);
-    // Some devices send multiple replies, so we need to catch them
-    // 0xb0 equels the ACK packet
-    // Special case: Reading firmware
-    if (self->cmd->cmd == read_fw.cmd) {
-      if (transfer->actual_length == self->cmd->response_len &&
-          self->last_read[4] == 0xb0) {
-        // We got ACK, now wait for the firmware version
-        G_DEBUG_HERE();
-        goodix_cmd_read(ssm, dev, self->cmd->response_len_2);
-      } else {
-        // Reading the firmware version
-        self->fw_ver = g_memdup(&self->last_read[7], self->cmd->response_len_2);
-        G_DEBUG_HERE();
-        goodix_cmd_done(ssm);
-      }
-    }
-    // Special case: Reading PSK hash
-    else if (self->cmd->cmd == read_psk.cmd) {
-      if (transfer->actual_length == self->cmd->response_len &&
-          self->last_read[4] == 0xb0) {
-        // We got ACK, now wait for the PSK
-        G_DEBUG_HERE();
-        goodix_cmd_read(ssm, dev, self->cmd->response_len_2);
-      } else {
-        /*fp_dbg("%lu", transfer->actual_length);
-        gint i;
-        for (i = 16; i < GOODIX_PSK_LEN+16; i++)
-        {
-          fp_dbg("%02X", self->last_read[i]);
-        }*/
+  // /* XXX: We used to reset the device in error cases! */
+  // if (transfer->endpoint & FPI_USB_ENDPOINT_IN) {
+  //   /* just finished receiving */
+  //   self->last_read = g_memdup(transfer->buffer, transfer->actual_length);
+  //   // fp_dbg("%lu", transfer->actual_length);
+  //   // Some devices send multiple replies, so we need to catch them
+  //   // 0xB0 equels the ACK packet
+  //   // Special case: Reading firmware
+  //   if (self->cmd->cmd == read_fw.cmd) {
+  //     if (transfer->actual_length == self->cmd->response_len &&
+  //         self->last_read[4] == 0xB0) {
+  //       // We got ACK, now wait for the firmware version
+  //       G_DEBUG_HERE();
+  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
+  //     } else {
+  //       // Reading the firmware version
+  //       self->fw_ver = g_memdup(&self->last_read[7],
+  //       self->cmd->response_len_2); G_DEBUG_HERE(); goodix_cmd_done(ssm);
+  //     }
+  //   }
+  //   // Special case: Reading PSK hash
+  //   else if (self->cmd->cmd == read_psk.cmd) {
+  //     if (transfer->actual_length == self->cmd->response_len &&
+  //         self->last_read[4] == 0xB0) {
+  //       // We got ACK, now wait for the PSK
+  //       G_DEBUG_HERE();
+  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
+  //     } else {
+  //       /*fp_dbg("%lu", transfer->actual_length);
+  //       gint i;
+  //       for (i = 16; i < GOODIX_PSK_LEN+16; i++)
+  //       {
+  //         fp_dbg("%02X", self->last_read[i]);
+  //       }*/
 
-        // Reading the PSK
-        self->sensor_psk_hash = g_memdup(&self->last_read[16], GOODIX_PSK_LEN);
-        G_DEBUG_HERE();
-        goodix_cmd_done(ssm);
-      }
-    }
-    // Special case: Setting MCU config
-    else if (self->cmd->cmd == mcu_set_config.cmd) {
-      if (transfer->actual_length == self->cmd->response_len &&
-          self->last_read[4] == 0xb0) {
-        // We got ACK, now wait for the PSK
-        G_DEBUG_HERE();
-        goodix_cmd_read(ssm, dev, self->cmd->response_len_2);
-      } else {
-        G_DEBUG_HERE();
-        goodix_cmd_done(ssm);
-      }
-    }
-    // Special case: Setting scan frequency
-    else if (self->cmd->cmd == set_powerdown_scan_frequency.cmd) {
-      if (transfer->actual_length == self->cmd->response_len &&
-          self->last_read[4] == 0xb0) {
-        // We got ACK, now wait for the second packet
-        G_DEBUG_HERE();
-        goodix_cmd_read(ssm, dev, self->cmd->response_len_2);
-      } else {
-        G_DEBUG_HERE();
-        goodix_cmd_done(ssm);
-      }
-    }
-    // Special case: Requesting TLS connection
-    else if (self->cmd->cmd == mcu_request_tls_connection.cmd) {
-      if (transfer->actual_length == self->cmd->response_len &&
-          self->last_read[4] == 0xb0) {
-        // We got ACK, now wait for the second packet
-        self->cmd_recv_counter = 1;
-        G_DEBUG_HERE();
-        goodix_cmd_read(ssm, dev, self->cmd->response_len_2);
-      } else if (self->cmd_recv_counter == 1) {
-        // Read 56 byte packet
-        self->cmd_recv_counter = 2;
-        G_DEBUG_HERE();
-        self->tls_msg_1 = g_memdup(&self->last_read, self->cmd->response_len_2);
-        goodix_cmd_read(ssm, dev, self->cmd->response_len_3);
-      }
-      /*else if(self->cmd_recv_counter == 2)
-      {
-        // Read first 64 byte packet
-        self->cmd_recv_counter = 3;
-        G_DEBUG_HERE ();
-        self->tls_msg_2 = g_memdup (&self->last_read,
-      self->cmd->response_len_3); goodix_cmd_read (ssm, dev,
-      self->cmd->response_len_4);
-      }*/
-      else {
-        // Read second 64 byte packet
-        self->cmd_recv_counter = 0;
-        G_DEBUG_HERE();
-        self->tls_msg_2 = g_memdup(&self->last_read, self->cmd->response_len_3);
+  //       // Reading the PSK
+  //       self->sensor_psk_hash = g_memdup(&self->last_read[16],
+  //       GOODIX_PSK_LEN); G_DEBUG_HERE(); goodix_cmd_done(ssm);
+  //     }
+  //   }
+  //   // Special case: Setting MCU config
+  //   else if (self->cmd->cmd == mcu_set_config.cmd) {
+  //     if (transfer->actual_length == self->cmd->response_len &&
+  //         self->last_read[4] == 0xB0) {
+  //       // We got ACK, now wait for the PSK
+  //       G_DEBUG_HERE();
+  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
+  //     } else {
+  //       G_DEBUG_HERE();
+  //       goodix_cmd_done(ssm);
+  //     }
+  //   }
+  //   // Special case: Setting scan frequency
+  //   else if (self->cmd->cmd == set_powerdown_scan_frequency.cmd) {
+  //     if (transfer->actual_length == self->cmd->response_len &&
+  //         self->last_read[4] == 0xB0) {
+  //       // We got ACK, now wait for the second packet
+  //       G_DEBUG_HERE();
+  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
+  //     } else {
+  //       G_DEBUG_HERE();
+  //       goodix_cmd_done(ssm);
+  //     }
+  //   }
+  //   // Special case: Requesting TLS connection
+  //   else if (self->cmd->cmd == mcu_request_tls_connection.cmd) {
+  //     if (transfer->actual_length == self->cmd->response_len &&
+  //         self->last_read[4] == 0xB0) {
+  //       // We got ACK, now wait for the second packet
+  //       self->cmd_recv_counter = 1;
+  //       G_DEBUG_HERE();
+  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
+  //     } else if (self->cmd_recv_counter == 1) {
+  //       // Read 56 byte packet
+  //       self->cmd_recv_counter = 2;
+  //       G_DEBUG_HERE();
+  //       self->tls_msg_1 = g_memdup(&self->last_read,
+  //       self->cmd->response_len_2); goodix_receive_data(ssm, dev,
+  //       self->cmd->response_len_3);
+  //     }
+  //     /*else if(self->cmd_recv_counter == 2)
+  //     {
+  //       // Read first 64 byte packet
+  //       self->cmd_recv_counter = 3;
+  //       G_DEBUG_HERE ();
+  //       self->tls_msg_2 = g_memdup (&self->last_read,
+  //     self->cmd->response_len_3); goodix_receive_data (ssm, dev,
+  //     self->cmd->response_len_4);
+  //     }*/
+  //     else {
+  //       // Read second 64 byte packet
+  //       self->cmd_recv_counter = 0;
+  //       G_DEBUG_HERE();
+  //       self->tls_msg_2 = g_memdup(&self->last_read,
+  //       self->cmd->response_len_3);
 
-        fp_dbg("\n");
+  //       fp_dbg("\n");
 
-        gint i;
-        for (i = 0; i < self->cmd->response_len_2; i++) {
-          fp_dbg("%02X", self->tls_msg_1[i]);
-        }
-        fp_dbg("\n");
-        for (i = 0; i < self->cmd->response_len_3; i++) {
-          fp_dbg("%02X", self->tls_msg_2[i]);
-        }
+  //       gint i;
+  //       for (i = 0; i < self->cmd->response_len_2; i++) {
+  //         fp_dbg("%02X", self->tls_msg_1[i]);
+  //       }
+  //       fp_dbg("\n");
+  //       for (i = 0; i < self->cmd->response_len_3; i++) {
+  //         fp_dbg("%02X", self->tls_msg_2[i]);
+  //       }
 
-        fp_dbg("\n");
-        /*for (i = 0; i < 64; i++)
-        {
-          fp_dbg("%02X", self->tls_msg_3[i]);
-        }*/
-        fp_dbg("\n");
+  //       fp_dbg("\n");
+  //       /*for (i = 0; i < 64; i++)
+  //       {
+  //         fp_dbg("%02X", self->tls_msg_3[i]);
+  //       }*/
+  //       fp_dbg("\n");
 
-        goodix_cmd_done(ssm);
-      }
-    } else {
-      goodix_cmd_done(ssm);
-    }
-  } else {
-    /* just finished sending */
-    G_DEBUG_HERE();
-    goodix_cmd_read(ssm, dev, self->cmd->response_len);
-  }
+  //       goodix_cmd_done(ssm);
+  //     }
+  //   } else {
+  //     goodix_cmd_done(ssm);
+  //   }
+  // } else {
+  //   /* just finished sending */
+  //   G_DEBUG_HERE();
+  //   goodix_receive_data(ssm, dev, self->cmd->response_len);
+  // }
 }
 
-static void goodix_run_cmd(FpiSsm *ssm, FpDevice *dev,
-                           const struct goodix_cmd *cmd, gint cmd_timeout) {
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiUsbTransfer *transfer;
-  GCancellable *cancellable = NULL;
+static void goodix_send_pack(FpiSsm *ssm, FpDevice *dev, guint8 flags,
+                             gpointer payload, guint16 payload_len,
+                             GDestroyNotify destroy) {
+  FpiUsbTransfer *transfer = fpi_usb_transfer_new(dev);
+  GError *error = NULL;
+  gpointer data;
+  gsize data_len;
 
-  self->cmd = cmd;
+  fp_dbg("Sending pack: flags=0x%02X, payload=%s", flags,
+         data_to_str(payload, payload_len));
 
-  transfer = fpi_usb_transfer_new(dev);
   transfer->ssm = ssm;
   transfer->short_is_error = TRUE;
 
-  if (cmd->cmd == mcu_set_config.cmd) {
-    // We're sending the mcu_set_config command
-    fpi_usb_transfer_fill_bulk_full(transfer, GOODIX_EP_CMD_OUT,
-                                    (guint8 *)cmd->cmd_cfg,
-                                    GOODIX_MAX_PAYLOAD_LEN * 5, NULL);
-  } else {
-    // We're sending any other command
-    fpi_usb_transfer_fill_bulk_full(transfer, GOODIX_EP_CMD_OUT,
-                                    (guint8 *)cmd->cmd, GOODIX_MAX_PAYLOAD_LEN,
-                                    NULL);
+  data_len = goodix_encode_pack(&data, flags, payload, payload_len, destroy);
+
+  for (gsize i = 0; i < data_len; i += GOODIX_MAX_DATA_WRITE) {
+    fpi_usb_transfer_fill_bulk_full(transfer, GOODIX_EP_OUT, (guint8 *)data + i,
+                                    GOODIX_MAX_DATA_WRITE, g_free);
+
+    if (!fpi_usb_transfer_submit_sync(transfer, GOODIX_TIMEOUT, &error))
+      fpi_ssm_mark_failed(ssm, error);
   }
 
-  fpi_usb_transfer_submit(transfer, cmd_timeout, cancellable, goodix_cmd_cb,
-                          NULL);
+  fpi_usb_transfer_unref(transfer);
 }
 
-/* -------------------------------------------------------------------------------
- */
+static void goodix_send_protocol(FpiSsm *ssm, FpDevice *dev, guint8 cmd,
+                                 gboolean calc_checksum, gpointer payload,
+                                 guint16 payload_len, GDestroyNotify destroy) {
+  gpointer data;
+  gsize data_len;
+
+  fp_dbg("Sending command: cmd=0x%02X, calc_checksum=%d, payload=%s", cmd,
+         calc_checksum, data_to_str(payload, payload_len));
+
+  FPI_DEVICE_GOODIXTLS(dev)->current_cmd = cmd;
+
+  data_len = goodix_encode_protocol(&data, cmd, calc_checksum, payload,
+                                    payload_len, destroy);
+
+  goodix_send_pack(ssm, dev, GOODIX_FLAGS_MSG_PROTOCOL, data, data_len, g_free);
+}
+
+static void goodix_cmd_nop(FpiSsm *ssm, FpDevice *dev) {
+  guint8 payload[] = {0x00, 0x00, 0x00, 0x00};
+
+  fp_dbg("Goodix nop");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_NOP, FALSE, payload,
+                       sizeof(payload), NULL);
+}
+
+static void goodix_cmd_mcu_get_image(FpiSsm *ssm, FpDevice *dev) {
+  guint8 payload[] = {0x01, 0x00};
+
+  fp_dbg("Goodix mcu get image");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_MCU_GET_IMAGE, TRUE, payload,
+                       sizeof(payload), NULL);
+}
+
+static void goodix_cmd_mcu_switch_to_fdt_down(FpiSsm *ssm, FpDevice *dev,
+                                              gpointer mode, guint16 mode_len,
+                                              GDestroyNotify destroy) {
+  fp_dbg("Goodix mcu switch to fdt down");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, TRUE, mode,
+                       mode_len, destroy);
+}
+
+static void goodix_cmd_mcu_switch_to_fdt_up(FpiSsm *ssm, FpDevice *dev,
+                                            gpointer mode, guint16 mode_len,
+                                            GDestroyNotify destroy) {
+  fp_dbg("Goodix mcu switch to fdt up");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, TRUE, mode,
+                       mode_len, destroy);
+}
+
+static void goodix_cmd_mcu_switch_to_fdt_mode(FpiSsm *ssm, FpDevice *dev,
+                                              gpointer mode, guint16 mode_len,
+                                              GDestroyNotify destroy) {
+  fp_dbg("Goodix mcu switch to fdt mode");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, TRUE, mode,
+                       mode_len, destroy);
+}
+
+static void goodix_cmd_nav_0(FpiSsm *ssm, FpDevice *dev) {
+  guint8 payload[] = {0x01, 0x00};
+
+  fp_dbg("Goodix nav 0");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_NAV_0, TRUE, payload,
+                       sizeof(payload), NULL);
+}
+
+static void goodix_cmd_mcu_switch_to_idle_mode(FpiSsm *ssm, FpDevice *dev,
+                                               guint8 sleep_time) {
+  gpointer payload = g_malloc(2);
+
+  fp_dbg("Goodix mcu switch to idle mode");
+
+  *(guint8 *)payload = sleep_time;
+  *((guint8 *)payload + 1) = 0;
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE, TRUE,
+                       payload, 2, g_free);
+}
+
+static void goodix_cmd_write_sensor_register(FpiSsm *ssm, FpDevice *dev,
+                                             guint16 address, guint16 value) {
+  // Only support one address and one value
+  // Only work on little endian machine
+
+  gpointer payload = g_malloc(5);
+
+  fp_dbg("Goodix write sensor register");
+
+  *(guint8 *)payload = 0;
+  *(guint16 *)((guint8 *)payload + 1) = address;
+  *(guint16 *)((guint8 *)payload + 3) = value;
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_WRITE_SENSOR_REGISTER, TRUE,
+                       payload, 5, g_free);
+}
+
+static void goodix_cmd_read_sensor_register(FpiSsm *ssm, FpDevice *dev,
+                                            guint16 address, guint8 length) {
+  // Only support one address
+  // Only work on little endian machine
+
+  gpointer payload = g_malloc(5);
+
+  fp_dbg("Goodix read sensor register");
+
+  *(guint8 *)payload = 0;
+  *(guint16 *)((guint8 *)payload + 1) = address;
+  *((guint8 *)payload + 3) = length;
+  *((guint8 *)payload + 4) = 0;
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_READ_SENSOR_REGISTER, TRUE, payload,
+                       5, g_free);
+}
+
+static void goodix_cmd_upload_config_mcu(FpiSsm *ssm, FpDevice *dev,
+                                         gpointer config, guint16 config_len,
+                                         GDestroyNotify destroy) {
+  fp_dbg("Goodix upload config mcu");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_UPLOAD_CONFIG_MCU, TRUE, config,
+                       config_len, destroy);
+}
+
+static void goodix_cmd_set_powerdown_scan_frequency(
+    FpiSsm *ssm, FpDevice *dev, guint16 powerdown_scan_frequency) {
+  // Only work on little endian machine
+
+  fp_dbg("Goodix set powerdown scan frequency");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY, TRUE,
+                       &powerdown_scan_frequency, 2, NULL);
+}
+
+static void goodix_cmd_enable_chip(FpiSsm *ssm, FpDevice *dev,
+                                   gboolean enable) {
+  gpointer payload = g_malloc(2);
+
+  fp_dbg("Goodix enable chip");
+
+  if (enable) enable = 1;
+
+  *(guint8 *)payload = enable;
+  *((guint8 *)payload + 1) = 0;
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_ENABLE_CHIP, TRUE, payload, 2,
+                       g_free);
+}
+
+static void goodix_cmd_reset(FpiSsm *ssm, FpDevice *dev, gboolean reset_sensor,
+                             gboolean soft_reset_mcu, guint8 sleep_time) {
+  gpointer payload = g_malloc(2);
+
+  fp_dbg("Goodix reset");
+
+  if (reset_sensor) reset_sensor = 1;
+  if (soft_reset_mcu) soft_reset_mcu = 1;
+
+  *(guint8 *)payload = soft_reset_mcu << 1 | reset_sensor;
+  *((guint8 *)payload + 1) = sleep_time;
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_RESET, TRUE, payload, 2, g_free);
+}
+
+static void goodix_cmd_firmware_version(FpiSsm *ssm, FpDevice *dev) {
+  guint8 payload[] = {0x00, 0x00};
+
+  fp_dbg("Goodix firmware version");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_FIRMWARE_VERSION, TRUE, payload,
+                       sizeof(payload), NULL);
+}
+
+static void goodix_cmd_query_mcu_state(FpiSsm *ssm, FpDevice *dev) {
+  guint8 payload[] = {0x55};
+
+  fp_dbg("Goodix query mcu state");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_QUERY_MCU_STATE, TRUE, payload,
+                       sizeof(payload), NULL);
+}
+
+static void goodix_cmd_request_tls_connection(FpiSsm *ssm, FpDevice *dev) {
+  guint8 payload[] = {0x00, 0x00};
+
+  fp_dbg("Goodix request tls connection");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_REQUEST_TLS_CONNECTION, TRUE,
+                       payload, sizeof(payload), NULL);
+}
+
+static void goodix_cmd_tls_successfully_established(FpiSsm *ssm,
+                                                    FpDevice *dev) {
+  guint8 payload[] = {0x00, 0x00};
+
+  fp_dbg("Goodix tls successfully established");
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED, TRUE,
+                       payload, sizeof(payload), NULL);
+}
+
+static void goodix_cmd_preset_psk_write_r(FpiSsm *ssm, FpDevice *dev,
+                                          guint32 address, gpointer psk,
+                                          guint32 length,
+                                          GDestroyNotify destroy) {
+  // Only support one address, one payload and one length
+  // Only work on little endian machine
+
+  gpointer payload = g_malloc(length + 8);
+
+  fp_dbg("Goodix preset psk write r");
+
+  *(guint32 *)payload = address;
+  *((guint32 *)payload + 1) = length;
+  memcpy((guint8 *)payload + 8, psk, length);
+  if (destroy) destroy(psk);
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_PRESET_PSK_WRITE_R, TRUE, payload,
+                       length + 8, g_free);
+}
+
+static void goodix_cmd_preset_psk_read_r(FpiSsm *ssm, FpDevice *dev,
+                                         guint32 address, guint32 length) {
+  // Only work on little endian machine
+
+  gpointer payload = g_malloc(8);
+
+  fp_dbg("Goodix preset psk read r");
+
+  *(guint32 *)payload = address;
+  *((guint32 *)payload + 1) = length;
+
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_PRESET_PSK_READ_R, TRUE, payload, 8,
+                       g_free);
+}
+
+/* ---- GOODIX SECTION END ---- */
+
+/* ------------------------------------------------------------------------- */
 
 /* ---- TLS SECTION START ---- */
 
@@ -267,280 +667,253 @@ enum tls_states {
 };
 
 static void tls_run_state(FpiSsm *ssm, FpDevice *dev) {
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
-
   G_DEBUG_HERE();
 
-  // gint i;
-
   switch (fpi_ssm_get_cur_state(ssm)) {
-    // NOP seems to do nothing, but the Windows driver does it in places too
     case TLS_SERVER_INIT:
-      TLS_server_init(ssm);
+      tls_server_init(ssm);
       break;
 
     case TLS_SERVER_HANDSHAKE_INIT:
-      TLS_server_handshake_init();
+      tls_server_handshake_init();
       break;
 
-      /*case TLS_MCU_REQUEST_CONNECTION:
-        goodix_run_cmd(ssm, dev, &mcu_request_tls_connection,
-        GOODIX_COMMAND_TIMEOUT); break;*/
+      // case TLS_MCU_REQUEST_CONNECTION:
   }
 }
 
 static void tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error) {
-  FpImageDevice *idev = FP_IMAGE_DEVICE(dev);
-
   G_DEBUG_HERE();
 
-  fpi_image_device_activate_complete(idev, error);
+  fpi_image_device_activate_complete(FP_IMAGE_DEVICE(dev), error);
 }
 
 static void goodix_tls(FpImageDevice *dev) {
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
-
   G_DEBUG_HERE();
-  goodix_dev_reset_state(self);
 
-  FpiSsm *ssm = fpi_ssm_new(FP_DEVICE(dev), tls_run_state, TLS_NUM_STATES);
-
-  fpi_ssm_start(ssm, tls_complete);
+  fpi_ssm_start(fpi_ssm_new(FP_DEVICE(dev), tls_run_state, TLS_NUM_STATES),
+                tls_complete);
 }
 
 /* ---- TLS SECTION END ---- */
 
-/* -------------------------------------------------------------------------------
- */
+/* ------------------------------------------------------------------------- */
 
 /* ---- ACTIVE SECTION START ---- */
 
 enum activate_states {
-  ACTIVATE_NOP1,
+  ACTIVATE_READ_AND_NOP,
   ACTIVATE_ENABLE_CHIP,
-  ACTIVATE_NOP2,
-  ACTIVATE_GET_FW_VER,
-  ACTIVATE_VERIFY_FW_VER,
-  ACTIVATE_READ_PSK,
-  ACTIVATE_VERIFY_PSK,
+  ACTIVATE_NOP,
+  ACTIVATE_CHECK_FW_VER,
+  ACTIVATE_CHECK_PSK,
   ACTIVATE_SET_MCU_IDLE,
   ACTIVATE_SET_MCU_CONFIG,
-  ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY1,
-  ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY2,
+  ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY,
   ACTIVATE_NUM_STATES,
 };
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
+  // FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
 
   G_DEBUG_HERE();
 
   // gint i;
 
   switch (fpi_ssm_get_cur_state(ssm)) {
-    // NOP seems to do nothing, but the Windows driver does it in places too
-    case ACTIVATE_NOP1:
-    case ACTIVATE_NOP2:
-      goodix_run_cmd(ssm, dev, &nop, GOODIX_COMMAND_TIMEOUT);
+    case ACTIVATE_READ_AND_NOP:
+      // NOP seems to clear the previous command buffer.
+      goodix_receive_data(ssm, dev, GOODIX_TIMEOUT);
+      // DON'T ADD A BREAK HERE!
+    case ACTIVATE_NOP:
+      goodix_cmd_nop(ssm, dev);
+      goodix_cmd_done(ssm, dev, GOODIX_CMD_NOP);
       break;
 
     case ACTIVATE_ENABLE_CHIP:
-      goodix_run_cmd(ssm, dev, &enable_chip, GOODIX_COMMAND_TIMEOUT);
+      goodix_cmd_enable_chip(ssm, dev, TRUE);
       break;
 
-    case ACTIVATE_GET_FW_VER:
-      goodix_run_cmd(ssm, dev, &read_fw, GOODIX_COMMAND_TIMEOUT);
+    case ACTIVATE_CHECK_FW_VER:
+      goodix_cmd_firmware_version(ssm, dev);
       break;
 
-    case ACTIVATE_VERIFY_FW_VER:
-      if (strcmp(self->fw_ver, GOODIX_FIRMWARE_VERSION_SUPPORTED) == 0) {
-        // The firmware version is supported
-        fpi_ssm_next_state(ssm);
-      } else {
-        // The firmware version is unsupported
-        fpi_ssm_mark_failed(ssm,
-                            fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL,
-                                                     "Unsupported firmware!"));
-      }
+      // case ACTIVATE_VERIFY_FW_VER:
+      //   if (!strcmp(self->fw_ver, GOODIX_FIRMWARE_VERSION_SUPPORTED)) {
+      //     // The firmware version is supported
+      //     fpi_ssm_next_state(ssm);
+      //   } else {
+      //     // The firmware version is unsupported
+      //     fpi_ssm_mark_failed(ssm,
+      //                         fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL,
+      //                                                  "Unsupported
+      //                                                  firmware!"));
+      //   }
+      //   break;
+
+    case ACTIVATE_CHECK_PSK:
+      goodix_cmd_preset_psk_read_r(ssm, dev, 0xBB020003, 0);
       break;
 
-    case ACTIVATE_READ_PSK:
-      goodix_run_cmd(ssm, dev, &read_psk, GOODIX_COMMAND_TIMEOUT);
-      break;
+      // case ACTIVATE_VERIFY_PSK:
+      //   /*for (i = 0; i < GOODIX_PSK_LEN; i++)
+      //   {
+      //     fp_dbg("%02X", self->sensor_psk_hash[i]);
+      //   }
 
-    case ACTIVATE_VERIFY_PSK:
-      /*for (i = 0; i < GOODIX_PSK_LEN; i++)
-      {
-        fp_dbg("%02X", self->sensor_psk_hash[i]);
-      }
+      //   fp_dbg("-----");
 
-      fp_dbg("-----");
+      //   for (i = 0; i < GOODIX_PSK_LEN; i++)
+      //   {
+      //     fp_dbg("%02X", zero_psk_hash[i]);
+      //   }*/
 
-      for (i = 0; i < GOODIX_PSK_LEN; i++)
-      {
-        fp_dbg("%02X", zero_PSK_hash[i]);
-      }*/
-
-      // The PSK hash matches the Zero-PSK hash
-      if (memcmp(self->sensor_psk_hash, &zero_PSK_hash,
-                 sizeof(&self->sensor_psk_hash)) == 0) {
-        // fpi_ssm_mark_completed (ssm);
-        fpi_ssm_next_state(ssm);
-      } else {
-        // The PSK hash doesn't match
-        fpi_ssm_mark_failed(ssm,
-                            fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL,
-                                                     "PSK doesn't match!"));
-      }
-      break;
+      //   // The PSK hash matches the Zero-PSK hash
+      //   if (!memcmp(self->sensor_psk_hash, &zero_psk_hash,
+      //               sizeof(&self->sensor_psk_hash))) {
+      //     // fpi_ssm_mark_completed (ssm);
+      //     fpi_ssm_next_state(ssm);
+      //   } else {
+      //     // The PSK hash doesn't match
+      //     fpi_ssm_mark_failed(ssm,
+      //                         fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL,
+      //                                                  "PSK doesn't
+      //                                                  match!"));
+      //   }
+      //   break;
 
     case ACTIVATE_SET_MCU_IDLE:
-      goodix_run_cmd(ssm, dev, &mcu_set_idle, GOODIX_COMMAND_TIMEOUT);
+      goodix_cmd_mcu_switch_to_idle_mode(ssm, dev, 20);
       break;
 
     case ACTIVATE_SET_MCU_CONFIG:
-      goodix_run_cmd(ssm, dev, &mcu_set_config, GOODIX_COMMAND_TIMEOUT);
+      goodix_cmd_upload_config_mcu(ssm, dev, device_config,
+                                   sizeof(device_config), NULL);
       break;
 
-    case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY1:
-    case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY2:
-      goodix_run_cmd(ssm, dev, &set_powerdown_scan_frequency,
-                     GOODIX_COMMAND_TIMEOUT);
+    case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY:
+      goodix_cmd_set_powerdown_scan_frequency(ssm, dev, 100);
       break;
   }
 }
 
 static void activate_complete(FpiSsm *ssm, FpDevice *dev, GError *error) {
-  FpImageDevice *idev = FP_IMAGE_DEVICE(dev);
+  FpImageDevice *image_dev = FP_IMAGE_DEVICE(dev);
 
   G_DEBUG_HERE();
 
-  if (error) {
-    fpi_image_device_session_error(dev, error);
-  } else {
-    fp_dbg("Activate completed\n");
-    fpi_image_device_activate_complete(idev, error);
-    goodix_tls(idev);
-  }
-}
+  fpi_image_device_activate_complete(image_dev, error);
 
-static void goodix_activate(FpImageDevice *dev) {
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
-
-  G_DEBUG_HERE();
-  goodix_dev_reset_state(self);
-
-  FpiSsm *ssm =
-      fpi_ssm_new(FP_DEVICE(dev), activate_run_state, ACTIVATE_NUM_STATES);
-
-  fpi_ssm_start(ssm, activate_complete);
+  if (!error) goodix_tls(image_dev);
 }
 
 /* ---- ACTIVE SECTION END ---- */
 
-/* -------------------------------------------------------------------------------
- */
+/* ------------------------------------------------------------------------- */
 
 /* ---- DEV SECTION START ---- */
 
 static void dev_init(FpImageDevice *dev) {
   GError *error = NULL;
-  // FpiDeviceGoodix *self;
 
   G_DEBUG_HERE();
 
   if (!g_usb_device_claim_interface(fpi_device_get_usb_device(FP_DEVICE(dev)),
-                                    0, 0, &error)) {
+                                    GOODIX_INTERFACE, 0, &error)) {
     fpi_image_device_open_complete(dev, error);
     return;
   }
 
-  // self = FPI_DEVICE_GOODIXTLS (dev);
-
   fpi_image_device_open_complete(dev, NULL);
-}
-
-static void goodix_dev_reset_state(FpiDeviceGoodixTLS *goodixdev) {
-  G_DEBUG_HERE();
-
-  goodixdev->cmd = NULL;
-  goodixdev->cmd_timeout = GOODIX_COMMAND_TIMEOUT;
-
-  g_free(goodixdev->last_read);
-  goodixdev->last_read = NULL;
 }
 
 static void dev_deinit(FpImageDevice *dev) {
   GError *error = NULL;
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
 
   G_DEBUG_HERE();
 
-  goodix_dev_reset_state(self);
-  g_free(self->background);
-  g_usb_device_release_interface(fpi_device_get_usb_device(FP_DEVICE(dev)), 0,
-                                 0, &error);
-  fpi_image_device_close_complete(dev, error);
+  if (!g_usb_device_release_interface(fpi_device_get_usb_device(FP_DEVICE(dev)),
+                                      GOODIX_INTERFACE, 0, &error)) {
+    fpi_image_device_close_complete(dev, error);
+    return;
+  }
+
+  fpi_image_device_close_complete(dev, NULL);
 }
 
 static void dev_activate(FpImageDevice *dev) {
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+
   G_DEBUG_HERE();
-  goodix_activate(dev);
+
+  self->active = TRUE;
+  self->current_data = NULL;
+  self->current_data_len = 0;
+
+  fpi_ssm_start(
+      fpi_ssm_new(FP_DEVICE(dev), activate_run_state, ACTIVATE_NUM_STATES),
+      activate_complete);
 }
 
 static void dev_change_state(FpImageDevice *dev, FpiImageDeviceState state) {
-  // FpiDeviceGoodix *self = FPI_DEVICE_GOODIX (dev);
-
   G_DEBUG_HERE();
 
-  /*if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
-    goodix_tls (dev);*/
+  // if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
+  //   goodix_tls(FPI_DEVICE_GOODIX(dev));
 }
 
 static void dev_deactivate(FpImageDevice *dev) {
-  FpiDeviceGoodixTLS *self = FPI_DEVICE_GOODIXTLS(dev);
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
 
   G_DEBUG_HERE();
 
-  if (!self->active)
-    /* The device is inactive already, complete the operation immediately. */
+  if (!self->active) {
+    g_clear_pointer(&self->current_data, g_free);
+    self->current_data_len = 0;
+
     fpi_image_device_deactivate_complete(dev, NULL);
-  else
-    /* The device is not yet inactive, flag that we are deactivating (and
-     * need to signal back deactivation).
-     * Note that any running capture will be cancelled already if needed. */
-    self->deactivating = TRUE;
+  } else
+    // The device is not yet inactive, flag that we are deactivating (and need
+    // to signal back deactivation). Note that any running capture will be
+    // cancelled already if needed.
+    self->active = FALSE;
+  // TODO?
 }
 
 /* ---- DEV SECTION END ---- */
 
-/* -------------------------------------------------------------------------------
- */
+/* ------------------------------------------------------------------------- */
 
 /* ---- FPI SECTION START ---- */
 
-static void fpi_device_goodixtls_init(FpiDeviceGoodixTLS *self) {
-  // nothing to be done here, move along
-}
+static void fpi_device_goodixtls_init(FpiDeviceGoodixTls *self) {}
 
-static void fpi_device_goodixtls_class_init(FpiDeviceGoodixTLSClass *class) {
+static void fpi_device_goodixtls_class_init(FpiDeviceGoodixTlsClass *class) {
   FpDeviceClass *dev_class = FP_DEVICE_CLASS(class);
   FpImageDeviceClass *img_class = FP_IMAGE_DEVICE_CLASS(class);
 
-  dev_class->id = "goodix";
-  dev_class->full_name = "Goodix 5110 Fingerprint Sensor";
+  G_DEBUG_HERE();
+
+  dev_class->id = "goodixtls";
+  dev_class->full_name = "Goodix TLS Fingerprint Sensor";
   dev_class->type = FP_DEVICE_TYPE_USB;
-  dev_class->id_table = goodix_id_table;
+  dev_class->id_table = id_table;
+
   dev_class->scan_type = FP_SCAN_TYPE_SWIPE;
+
+  // TODO
+  img_class->bz3_threshold = 24;
+  img_class->img_width = 80;
+  img_class->img_height = 88;
 
   img_class->img_open = dev_init;
   img_class->img_close = dev_deinit;
   img_class->activate = dev_activate;
-  img_class->deactivate = dev_deactivate;
   img_class->change_state = dev_change_state;
+  img_class->deactivate = dev_deactivate;
 
-  // ToDo
-  img_class->bz3_threshold = 24;
+  fpi_device_class_auto_initialize_features(dev_class);
+  dev_class->features &= ~FP_DEVICE_FEATURE_VERIFY;
 }
 
 /* ---- FPI SECTION END ---- */

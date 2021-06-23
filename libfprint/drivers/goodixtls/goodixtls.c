@@ -21,7 +21,12 @@
 
 #include "goodixtls.h"
 
-static unsigned int TLS_server_psk_server_callback(SSL *ssl,
+int sock;
+FpiSsm *fpi_ssm;
+pthread_t server;
+SSL_CTX *ctx;
+
+static unsigned int tls_server_psk_server_callback(SSL *ssl,
                                                    const char *identity,
                                                    unsigned char *psk,
                                                    unsigned int max_psk_len) {
@@ -49,7 +54,7 @@ static unsigned int TLS_server_psk_server_callback(SSL *ssl,
   return key_len;
 }
 
-int TLS_server_create_socket(int port) {
+int tls_server_create_socket(int port) {
   int s;
   struct sockaddr_in addr;
 
@@ -91,7 +96,7 @@ int TLS_server_create_socket(int port) {
     EVP_cleanup();
 }*/
 
-SSL_CTX *TLS_server_create_ctx(void) {
+SSL_CTX *tls_server_create_ctx(void) {
   const SSL_METHOD *method;
 
   method = SSLv23_server_method();
@@ -104,17 +109,17 @@ SSL_CTX *TLS_server_create_ctx(void) {
   return ctx;
 }
 
-void TLS_server_config_ctx(void) {
+void tls_server_config_ctx(void) {
   SSL_CTX_set_ecdh_auto(ctx, 1);
   SSL_CTX_set_dh_auto(ctx, 1);
   SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
   SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
   SSL_CTX_set_cipher_list(ctx, "ALL");
 
-  SSL_CTX_set_psk_server_callback(ctx, TLS_server_psk_server_callback);
+  SSL_CTX_set_psk_server_callback(ctx, tls_server_psk_server_callback);
 }
 
-void *TLS_server_loop(void *arg) {
+void *tls_server_loop(void *arg) {
   /* Handle connections */
   while (1) {
     struct sockaddr_in addr;
@@ -146,12 +151,12 @@ void *TLS_server_loop(void *arg) {
   }
 }
 
-void TLS_server_stop(void) {
+void tls_server_stop(void) {
   close(sock);
   SSL_CTX_free(ctx);
 }
 
-void *TLS_server_handshake_loop(void *arg) {
+void *tls_server_handshake_loop(void *arg) {
   struct sockaddr_in addr;
   guint len = sizeof(addr);
   SSL *ssl;
@@ -172,8 +177,8 @@ void *TLS_server_handshake_loop(void *arg) {
   return 0;
 }
 
-void TLS_server_handshake_init(void) {
-  int err = pthread_create(&server, NULL, &TLS_server_handshake_loop, NULL);
+void tls_server_handshake_init(void) {
+  int err = pthread_create(&server, NULL, &tls_server_handshake_loop, NULL);
   if (err != 0) {
     fp_dbg("Unable to create TLS server thread");
     fpi_ssm_mark_failed(fpi_ssm, fpi_device_error_new_msg(
@@ -185,13 +190,13 @@ void TLS_server_handshake_init(void) {
   }
 }
 
-void TLS_server_init(FpiSsm *ssm) {
+void tls_server_init(FpiSsm *ssm) {
   fpi_ssm = ssm;
 
   SSL_load_error_strings();
   OpenSSL_add_ssl_algorithms();
 
-  ctx = TLS_server_create_ctx();
+  ctx = tls_server_create_ctx();
 
   if (ctx == NULL) {
     fp_dbg("Unable to create TLS server context");
@@ -201,9 +206,9 @@ void TLS_server_init(FpiSsm *ssm) {
     return;
   }
 
-  TLS_server_config_ctx();
+  tls_server_config_ctx();
 
-  sock = TLS_server_create_socket(GOODIX_TLS_SERVER_PORT);
+  sock = tls_server_create_socket(GOODIX_TLS_SERVER_PORT);
   if (sock == -1) {
     fp_dbg("Unable to create TLS server socket");
     fpi_ssm_mark_failed(

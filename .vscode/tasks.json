@@ -1,0 +1,20 @@
+{
+  "tasks": [
+    {
+      "type": "cppbuild",
+      "label": "Meson: build current project",
+      "command": "/usr/bin/meson",
+      "args": ["compile"],
+      "options": {
+        "cwd": "${workspaceFolder}/_build"
+      },
+      "problemMatcher": ["$gcc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "detail": "Build the current project using meson."
+    }
+  ],
+  "version": "2.0.0"
+}
