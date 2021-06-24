@@ -1,6 +1,6 @@
 {
-    "files.associations": {
-        "limits": "c",
-        "cmath": "c"
-    }
+  "files.associations": {
+    "*.c": "c",
+    "*.h": "c"
+  }
 }

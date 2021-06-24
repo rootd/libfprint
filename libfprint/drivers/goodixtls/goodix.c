@@ -34,7 +34,6 @@ struct _FpiDeviceGoodixTls {
   SSL_CTX *tls_server_ctx;
 
   guint8 current_cmd;
-  guint8 current_cmd;
 
   gpointer current_data;
   guint16 current_data_len;
@@ -48,12 +47,12 @@ struct _FpiDeviceGoodixTls {
 G_DEFINE_TYPE(FpiDeviceGoodixTls, fpi_device_goodixtls, FP_TYPE_IMAGE_DEVICE);
 
 gchar *data_to_str(gpointer data, gsize data_len) {
-  gchar *data_str = g_malloc(2 * data_len + 1);
+  g_autofree gchar *data_str = g_malloc(2 * data_len + 1);
 
   for (gsize i = 0; i < data_len; i++)
     sprintf((gchar *)data_str + 2 * i, "%02X", *((guint8 *)data + i));
 
-  return data_str;
+  return g_steal_pointer(&data_str);
 }
 
 /* ---- GOODIX SECTION START ---- */
@@ -87,26 +86,160 @@ static void goodix_cmd_done(FpiSsm *ssm, FpDevice *dev, guint8 cmd) {
   fpi_ssm_next_state(ssm);
 }
 
-static void goodix_pack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
-                               guint16 data_len, GDestroyNotify data_destroy) {
-  guint8 *flags;
-  gpointer payload;
+static void goodix_ack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
+                              gsize data_len, GDestroyNotify data_destroy) {
+  guint8 cmd;
+  gboolean need_config;
+  GError *error = NULL;
+
+  need_config = goodix_decode_ack(&cmd, data, data_len, data_destroy, &error);
+
+  if (error) goto failed;
+
+  if (need_config) fp_warn("MCU need to be configured");
+
+  switch (cmd) {
+    case GOODIX_CMD_NOP:
+      fp_warn(
+          "Received nop ack, device might be in application production mode");
+    case GOODIX_CMD_MCU_GET_IMAGE:
+      goto read;
+    case GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN:
+      goodix_receive_data(ssm, dev, 0);
+      return;
+    case GOODIX_CMD_MCU_SWITCH_TO_FDT_UP:
+      goodix_receive_data(ssm, dev, 0);
+      return;
+    case GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE:
+      goto read;
+    case GOODIX_CMD_NAV_0:
+      goodix_cmd_done(ssm, dev, GOODIX_CMD_NAV_0);
+      goto read;
+    case GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE:
+      goodix_cmd_done(ssm, dev, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE);
+      goto read;
+    case GOODIX_CMD_WRITE_SENSOR_REGISTER:
+      goodix_cmd_done(ssm, dev, GOODIX_CMD_WRITE_SENSOR_REGISTER);
+    case GOODIX_CMD_READ_SENSOR_REGISTER:
+    case GOODIX_CMD_UPLOAD_CONFIG_MCU:
+    case GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY:
+      goto read;
+    case GOODIX_CMD_ENABLE_CHIP:
+      goodix_cmd_done(ssm, dev, GOODIX_CMD_ENABLE_CHIP);
+    case GOODIX_CMD_RESET:
+      goto read;
+    case GOODIX_CMD_MCU_ERASE_APP:
+      goodix_cmd_done(ssm, dev, GOODIX_CMD_MCU_ERASE_APP);
+    case GOODIX_CMD_READ_OTP:
+    case GOODIX_CMD_FIRMWARE_VERSION:
+    case GOODIX_CMD_QUERY_MCU_STATE:
+    case GOODIX_CMD_ACK:
+    case GOODIX_CMD_REQUEST_TLS_CONNECTION:
+      goto read;
+    case GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED:
+      goodix_cmd_done(ssm, dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED);
+    case GOODIX_CMD_PRESET_PSK_WRITE_R:
+    case GOODIX_CMD_PRESET_PSK_READ_R:
+      goto read;
+    default:
+      // Unknown command. Raising an error.
+      g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                  "Invalid ack command: 0x%02X", cmd);
+      goto failed;
+  }
+
+read:
+  goodix_receive_data(ssm, dev, GOODIX_TIMEOUT);
+  return;
+
+failed:
+  fpi_ssm_mark_failed(ssm, error);
+  return;
+}
+
+static void goodix_protocol_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
+                                   gsize data_len,
+                                   GDestroyNotify data_destroy) {
+  guint8 cmd;
+  gboolean invalid_checksum;
+  gpointer payload = NULL;
   guint16 payload_len, payload_ptr_len;
   GError *error = NULL;
 
-  payload_ptr_len = goodix_decode_pack(&flags, &payload, &payload_len, data,
-                                       data_len, data_destroy, &error);
+  payload_ptr_len =
+      goodix_decode_protocol(&cmd, &invalid_checksum, &payload, &payload_len,
+                             data, data_len, data_destroy, &error);
 
-  if (error) {
-    fpi_ssm_mark_failed(ssm, error);
-    return;
-  }
+  if (error) goto failed;
 
   if (payload_ptr_len < payload_len) {
-    // Packet is not full, we still need data. Starting to read again.
-    goodix_receive_data(ssm, dev, GOODIX_TIMEOUT);
-    return;
+    // Command is not full but packet is since we checked that before.
+    // This means that something when wrong. This should never happen.
+    // Raising an error.
+    // TODO implement reassembling for messages protocol beacause some device
+    // doesn't use essages packets.
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid message protocol length: %d bytes / %d bytes",
+                payload_ptr_len, payload_len);
+    goto failed;
   }
+
+  if (invalid_checksum) {
+    g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                        "Invalid message protocol checksum");
+    goto failed;
+  }
+
+  fp_dbg("Received command: cmd=0x%02X, invalid_checksum=%d, payload=%s", cmd,
+         invalid_checksum, data_to_str(payload, payload_len));
+
+  switch (cmd) {
+    case GOODIX_CMD_ACK:
+      // Ack reply. Decoding it.
+      goodix_ack_handle(ssm, dev, payload, payload_ptr_len, NULL);
+      goto free;
+
+    default:
+      // Unknown command. Raising an error.
+      g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                  "Invalid message protocol command: 0x%02X", cmd);
+      goto failed;
+  }
+
+  goodix_receive_data(ssm, dev, GOODIX_TIMEOUT);
+  goto free;
+
+failed:
+  fpi_ssm_mark_failed(ssm, error);
+  goto free;
+
+free:
+  g_free(payload);
+}
+
+static void goodix_pack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
+                               gsize data_len, GDestroyNotify data_destroy) {
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+  guint8 flags;
+  gpointer payload = NULL;
+  guint16 payload_len, payload_ptr_len;
+  GError *error = NULL;
+
+  self->current_data =
+      g_realloc(self->current_data, self->current_data_len + data_len);
+  memcpy((guint8 *)self->current_data + self->current_data_len, data, data_len);
+  if (data_destroy) data_destroy(data);
+  self->current_data_len += data_len;
+
+  payload_ptr_len =
+      goodix_decode_pack(&flags, &payload, &payload_len, self->current_data,
+                         self->current_data_len, NULL, &error);
+
+  if (error) goto failed;
+
+  if (payload_ptr_len < payload_len)
+    // Packet is not full, we still need data. Starting to read again.
+    goto read;
 
   fp_dbg("Received pack: flags=0x%02X, payload=%s", flags,
          data_to_str(payload, payload_len));
@@ -114,108 +247,13 @@ static void goodix_pack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
   switch (flags) {
     case GOODIX_FLAGS_MSG_PROTOCOL:
       // Message protocol. Decoding it.
-      data = payload;
-      length =
-          goodix_decode_protocol(&cmd, &invalid_checksum, &payload,
-                                 &payload_len, data, length, g_free, &error);
-
-      if (error) goto failed;
-
-      if (length < payload_len) {
-        // Command is not full but packet is since we checked that before.
-        // This means that something when wrong. This should never happen.
-        // Raising an error.
-        g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                    "Invalid message protocol length: %d bytes / %d bytes",
-                    length, payload_len);
-        goto failed;
-      }
-
-      if (invalid_checksum) {
-        g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                            "Invalid message protocol checksum");
-        goto failed;
-      }
-
-      fp_dbg("Received command: cmd=0x%02X, invalid_checksum=%d, payload=%s",
-             cmd, invalid_checksum, data_to_str(payload, payload_len));
-
-      switch (cmd) {
-        case GOODIX_CMD_ACK:
-          // Ack reply. Decoding it.
-          data = payload;
-          need_config = goodix_decode_ack(&cmd, data, length, g_free, &error);
-
-          if (error) goto failed;
-
-          if (need_config) fp_warn("MCU need to be configured");
-
-          switch (cmd) {
-            case GOODIX_CMD_NOP:
-              fp_warn(
-                  "Received nop ack, device might be in application "
-                  "production "
-                  "mode");
-              break;
-            case GOODIX_CMD_MCU_GET_IMAGE:
-            case GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN:
-              goodix_receive_data(ssm, dev, 0);
-              return;
-            case GOODIX_CMD_MCU_SWITCH_TO_FDT_UP:
-              goodix_receive_data(ssm, dev, 0);
-              return;
-            case GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE:
-              break;
-            case GOODIX_CMD_NAV_0:
-              goodix_cmd_done(ssm, dev, GOODIX_CMD_NAV_0);
-              break;
-            case GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE:
-              goodix_cmd_done(ssm, dev, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE);
-              break;
-            case GOODIX_CMD_WRITE_SENSOR_REGISTER:
-              goodix_cmd_done(ssm, dev, GOODIX_CMD_WRITE_SENSOR_REGISTER);
-            case GOODIX_CMD_READ_SENSOR_REGISTER:
-            case GOODIX_CMD_UPLOAD_CONFIG_MCU:
-            case GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY:
-              break;
-            case GOODIX_CMD_ENABLE_CHIP:
-              goodix_cmd_done(ssm, dev, GOODIX_CMD_ENABLE_CHIP);
-            case GOODIX_CMD_RESET:
-              break;
-            case GOODIX_CMD_MCU_ERASE_APP:
-              goodix_cmd_done(ssm, dev, GOODIX_CMD_MCU_ERASE_APP);
-            case GOODIX_CMD_READ_OTP:
-            case GOODIX_CMD_FIRMWARE_VERSION:
-            case GOODIX_CMD_QUERY_MCU_STATE:
-            case GOODIX_CMD_ACK:
-            case GOODIX_CMD_REQUEST_TLS_CONNECTION:
-              break;
-            case GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED:
-              goodix_cmd_done(ssm, dev,
-                              GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED);
-            case GOODIX_CMD_PRESET_PSK_WRITE_R:
-            case GOODIX_CMD_PRESET_PSK_READ_R:
-              break;
-            default:
-              // Unknown command. Raising an error.
-              g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                          "Invalid ack command: 0x%02X", cmd);
-              goto failed;
-          }
-          break;
-
-        default:
-          // Unknown command. Raising an error.
-          g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                      "Invalid message protocol command: 0x%02X", cmd);
-          goto failed;
-      }
-      break;
+      goodix_protocol_handle(ssm, dev, payload, payload_ptr_len, NULL);
+      goto free;
 
     case GOODIX_FLAGS_TLS:
       // TLS message sending it to TLS server.
       // TODO
-      break;
+      goto read;
 
     default:
       // Unknown flags. Raising an error.
@@ -224,41 +262,33 @@ static void goodix_pack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
       goto failed;
   }
 
-  g_clear_pointer(&self->current_data, g_free);
+read:
+  goodix_receive_data(ssm, dev, GOODIX_TIMEOUT);
+  goto free;
+
+failed:
+  fpi_ssm_mark_failed(ssm, error);
+  goto free;
+
+free:
   self->current_data_len = 0;
-}
-
-static void goodix_payload_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
-                                  gsize data_len, GDestroyNotify data_destroy) {
-  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-
-  self->current_data =
-      g_realloc(self->current_data, self->current_data_len + data_len);
-  memcpy((guint8 *)self->current_data + self->current_data_len, data, data_len);
-  if (data_destroy) data_destroy(data);
-  self->current_data_len = self->current_data_len + data_len;
-
-  goodix_pack_handle(ssm, dev, self->current_data, self->current_data_len,
-                     NULL);
+  g_clear_pointer(&self->current_data, g_free);
+  g_free(payload);
 }
 
 static void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
                                    gpointer user_data, GError *error) {
-  FpiSsm *ssm = transfer->ssm;
-  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-
-  guint8 flags, cmd;
-  guint16 payload_len, length;
-  gpointer payload, data;
-  gboolean invalid_checksum, need_config;
-
   G_DEBUG_HERE();
 
-  if (error) {
-    // XXX: In the cancellation case we used to not mark the SSM as failed?
-    fpi_ssm_mark_failed(ssm, error);
-    return;
-  }
+  if (error) goto failed;
+
+  goodix_pack_handle(transfer->ssm, dev, transfer->buffer,
+                     transfer->actual_length, NULL);
+
+  return;
+
+failed:
+  fpi_ssm_mark_failed(transfer->ssm, error);
 
   // /* XXX: We used to reset the device in error cases! */
   // if (transfer->endpoint & FPI_USB_ENDPOINT_IN) {
@@ -407,9 +437,16 @@ static void goodix_send_pack(FpiSsm *ssm, FpDevice *dev, guint8 flags,
                                     GOODIX_MAX_DATA_WRITE, g_free);
 
     if (!fpi_usb_transfer_submit_sync(transfer, GOODIX_TIMEOUT, &error))
-      fpi_ssm_mark_failed(ssm, error);
+      goto failed;
   }
 
+  goto free;
+
+failed:
+  fpi_ssm_mark_failed(ssm, error);
+  goto free;
+
+free:
   fpi_usb_transfer_unref(transfer);
 }
 

@@ -23,7 +23,6 @@
 
 #include "drivers_api.h"
 #include <glib.h>
-#include <math.h>
 
 #define GOODIX_MAX_DATA_WRITE 0x40
 #define GODDIX_MAX_DATA_READ 0x2000

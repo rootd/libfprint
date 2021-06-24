@@ -33,10 +33,13 @@ gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
                          guint16 payload_len, GDestroyNotify payload_destroy) {
   // Only work on little endian machine
 
-  gsize data_ptr_pen =
-      ceil((payload_len + 4) / GOODIX_MAX_DATA_WRITE) * GOODIX_MAX_DATA_WRITE;
+  gsize data_ptr_len = payload_len + 4;
 
-  *data = g_malloc0(payload_len + 4);  // Use g_malloc?
+  if (data_ptr_len % GOODIX_MAX_DATA_WRITE)
+    data_ptr_len +=
+        GOODIX_MAX_DATA_WRITE - data_ptr_len % GOODIX_MAX_DATA_WRITE;
+
+  *data = g_malloc0(data_ptr_len);  // Use g_malloc?
 
   *(guint8 *)*data = flags;
   *(guint16 *)((guint8 *)*data + 1) = payload_len;
@@ -44,7 +47,7 @@ gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
   memcpy((guint8 *)*data + 4, payload, payload_len);
   if (payload_destroy) payload_destroy(payload);
 
-  return data_ptr_pen;
+  return data_ptr_len;
 }
 
 gsize goodix_encode_protocol(gpointer *data, guint8 cmd, gboolean calc_checksum,
@@ -80,7 +83,7 @@ guint16 goodix_decode_pack(guint8 *flags, gpointer *payload,
 
   if (data_len < 4) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message pack length: %d", data_len);
+                "Invalid message pack length: %ld", data_len);
     return 0;
   }
 
@@ -111,7 +114,7 @@ guint16 goodix_decode_protocol(guint8 *cmd, gboolean *invalid_checksum,
 
   if (data_len < 4) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message protocol length: %d", data_len);
+                "Invalid message protocol length: %ld", data_len);
     return 0;
   }
 
@@ -151,5 +154,5 @@ gboolean goodix_decode_ack(guint8 *cmd, gpointer data, guint16 data_len,
     return 0;
   }
 
-  return status & 0x2 == 0x2;
+  return (status & 0x2) == 0x2;
 }
