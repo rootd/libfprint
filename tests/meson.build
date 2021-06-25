@@ -24,6 +24,7 @@ envs.set('NO_AT_BRIDGE', '1')
 drivers_tests = [
     'aes3500',
     'elan',
+    'elanspi',
     'synaptics',
     'vfs0050',
     'vfs301',
@@ -82,17 +83,22 @@ if get_option('introspection')
     endforeach
 
     foreach driver_test: drivers_tests
+        if driver_test.contains('-')
+          driver_name = driver_test.split('-')[0]
+        else
+          driver_name = driver_test
+        endif
         driver_envs = envs
-        driver_envs.set('FP_DRIVERS_WHITELIST', driver_test)
+        driver_envs.set('FP_DRIVERS_WHITELIST', driver_name)
 
-        if (driver_test in supported_drivers and
+        if (driver_name in supported_drivers and
             gusb_dep.version().version_compare('>= 0.3.0'))
             test(driver_test,
                 find_program('umockdev-test.py'),
                 args: join_paths(meson.current_source_dir(), driver_test),
                 env: driver_envs,
                 suite: ['drivers'],
-                timeout: 10,
+                timeout: 15,
                 depends: libfprint_typelib,
             )
         else
