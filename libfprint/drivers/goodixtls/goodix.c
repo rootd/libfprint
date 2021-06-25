@@ -65,7 +65,7 @@ static void goodix_receive_data(FpiSsm *ssm, FpDevice *dev, guint timeout) {
   transfer->ssm = ssm;
   transfer->short_is_error = FALSE;
 
-  fpi_usb_transfer_fill_bulk(transfer, GOODIX_EP_IN, GODDIX_MAX_DATA_READ);
+  fpi_usb_transfer_fill_bulk(transfer, GOODIX_EP_IN, EP_IN_MAX_BUF_SIZE);
 
   fpi_usb_transfer_submit(transfer, timeout, NULL, goodix_receive_data_cb,
                           NULL);
@@ -468,20 +468,25 @@ static void goodix_send_protocol(FpiSsm *ssm, FpDevice *dev, guint8 cmd,
 }
 
 static void goodix_cmd_nop(FpiSsm *ssm, FpDevice *dev) {
-  guint8 payload[] = {0x00, 0x00, 0x00, 0x00};
+  struct _payload {
+    guint32 unknown;
+  } __attribute__((packed)) payload = {.unknown = 0};
 
   fp_dbg("Goodix nop");
 
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_NOP, FALSE, payload,
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_NOP, FALSE, &payload,
                        sizeof(payload), NULL);
 }
 
 static void goodix_cmd_mcu_get_image(FpiSsm *ssm, FpDevice *dev) {
-  guint8 payload[] = {0x01, 0x00};
+  struct _payload {
+    guint8 unused_flags;
+    guint8 none;
+  } __attribute__((packed)) payload = {.unused_flags = 0x01, .none = 0};
 
   fp_dbg("Goodix mcu get image");
 
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_MCU_GET_IMAGE, TRUE, payload,
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_MCU_GET_IMAGE, TRUE, &payload,
                        sizeof(payload), NULL);
 }
 
@@ -513,60 +518,66 @@ static void goodix_cmd_mcu_switch_to_fdt_mode(FpiSsm *ssm, FpDevice *dev,
 }
 
 static void goodix_cmd_nav_0(FpiSsm *ssm, FpDevice *dev) {
-  guint8 payload[] = {0x01, 0x00};
+  struct _payload {
+    guint8 unused_flags;
+    guint8 none;
+  } __attribute__((packed)) payload = {.unused_flags = 0x01, .none = 0};
 
   fp_dbg("Goodix nav 0");
 
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_NAV_0, TRUE, payload,
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_NAV_0, TRUE, &payload,
                        sizeof(payload), NULL);
 }
 
 static void goodix_cmd_mcu_switch_to_idle_mode(FpiSsm *ssm, FpDevice *dev,
                                                guint8 sleep_time) {
-  gpointer payload = g_malloc(2);
+  struct _payload {
+    guint8 sleep_time;
+    guint8 none;
+  } __attribute__((packed)) payload = {.sleep_time = sleep_time, .none = 0};
 
   fp_dbg("Goodix mcu switch to idle mode");
 
-  *(guint8 *)payload = sleep_time;
-  *((guint8 *)payload + 1) = 0;
-
   goodix_send_protocol(ssm, dev, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE, TRUE,
-                       payload, 2, g_free);
+                       &payload, sizeof(payload), NULL);
 }
 
 static void goodix_cmd_write_sensor_register(FpiSsm *ssm, FpDevice *dev,
                                              guint16 address, guint16 value) {
   // Only support one address and one value
-  // Only work on little endian machine
 
-  gpointer payload = g_malloc(5);
+  struct _payload {
+    guint8 multiples;
+    guint16 address;
+    guint16 value;
+  } __attribute__((packed)) payload = {.multiples = FALSE,
+                                       .address = GUINT16_TO_LE(address),
+                                       .value = GUINT16_TO_LE(value)};
 
   fp_dbg("Goodix write sensor register");
 
-  *(guint8 *)payload = 0;
-  *(guint16 *)((guint8 *)payload + 1) = address;
-  *(guint16 *)((guint8 *)payload + 3) = value;
-
   goodix_send_protocol(ssm, dev, GOODIX_CMD_WRITE_SENSOR_REGISTER, TRUE,
-                       payload, 5, g_free);
+                       &payload, sizeof(payload), NULL);
 }
 
 static void goodix_cmd_read_sensor_register(FpiSsm *ssm, FpDevice *dev,
                                             guint16 address, guint8 length) {
   // Only support one address
-  // Only work on little endian machine
 
-  gpointer payload = g_malloc(5);
+  struct _payload {
+    guint8 multiples;
+    guint16 address;
+    guint8 length;
+    guint8 none;
+  } __attribute__((packed)) payload = {.multiples = FALSE,
+                                       .address = GUINT16_TO_LE(address),
+                                       .length = length,
+                                       .none = 0};
 
   fp_dbg("Goodix read sensor register");
 
-  *(guint8 *)payload = 0;
-  *(guint16 *)((guint8 *)payload + 1) = address;
-  *((guint8 *)payload + 3) = length;
-  *((guint8 *)payload + 4) = 0;
-
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_READ_SENSOR_REGISTER, TRUE, payload,
-                       5, g_free);
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_READ_SENSOR_REGISTER, TRUE,
+                       &payload, sizeof(payload), NULL);
 }
 
 static void goodix_cmd_upload_config_mcu(FpiSsm *ssm, FpDevice *dev,
@@ -580,114 +591,127 @@ static void goodix_cmd_upload_config_mcu(FpiSsm *ssm, FpDevice *dev,
 
 static void goodix_cmd_set_powerdown_scan_frequency(
     FpiSsm *ssm, FpDevice *dev, guint16 powerdown_scan_frequency) {
-  // Only work on little endian machine
+  struct _payload {
+    guint16 powerdown_scan_frequency;
+  } __attribute__((packed)) payload = {
+      .powerdown_scan_frequency = GUINT16_TO_LE(powerdown_scan_frequency)};
 
   fp_dbg("Goodix set powerdown scan frequency");
 
   goodix_send_protocol(ssm, dev, GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY, TRUE,
-                       &powerdown_scan_frequency, 2, NULL);
+                       &payload, sizeof(payload), NULL);
 }
 
 static void goodix_cmd_enable_chip(FpiSsm *ssm, FpDevice *dev,
                                    gboolean enable) {
-  gpointer payload = g_malloc(2);
+  struct _payload {
+    guint8 enable;
+    guint8 none;
+  } __attribute__((packed))
+  payload = {.enable = enable ? TRUE : FALSE, .none = 0};
 
   fp_dbg("Goodix enable chip");
 
-  if (enable) enable = 1;
-
-  *(guint8 *)payload = enable;
-  *((guint8 *)payload + 1) = 0;
-
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_ENABLE_CHIP, TRUE, payload, 2,
-                       g_free);
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_ENABLE_CHIP, TRUE, &payload,
+                       sizeof(payload), NULL);
 }
 
 static void goodix_cmd_reset(FpiSsm *ssm, FpDevice *dev, gboolean reset_sensor,
                              gboolean soft_reset_mcu, guint8 sleep_time) {
-  gpointer payload = g_malloc(2);
+  struct _payload {
+    guint8 reset_flags;
+    guint8 sleep_time;
+  } __attribute__((packed))
+  payload = {.reset_flags = (soft_reset_mcu ? TRUE : FALSE) << 1 |
+                            (reset_sensor ? TRUE : FALSE),
+             .sleep_time = sleep_time};
 
   fp_dbg("Goodix reset");
 
-  if (reset_sensor) reset_sensor = 1;
-  if (soft_reset_mcu) soft_reset_mcu = 1;
-
-  *(guint8 *)payload = soft_reset_mcu << 1 | reset_sensor;
-  *((guint8 *)payload + 1) = sleep_time;
-
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_RESET, TRUE, payload, 2, g_free);
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_RESET, TRUE, &payload,
+                       sizeof(payload), NULL);
 }
 
 static void goodix_cmd_firmware_version(FpiSsm *ssm, FpDevice *dev) {
-  guint8 payload[] = {0x00, 0x00};
+  struct _payload {
+    guint16 none;
+  } __attribute__((packed)) payload = {.none = 0};
 
   fp_dbg("Goodix firmware version");
 
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_FIRMWARE_VERSION, TRUE, payload,
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_FIRMWARE_VERSION, TRUE, &payload,
                        sizeof(payload), NULL);
 }
 
 static void goodix_cmd_query_mcu_state(FpiSsm *ssm, FpDevice *dev) {
-  guint8 payload[] = {0x55};
+  struct _payload {
+    guint8 unused_flags;
+  } __attribute__((packed)) payload = {.unused_flags = 0x55};
 
   fp_dbg("Goodix query mcu state");
 
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_QUERY_MCU_STATE, TRUE, payload,
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_QUERY_MCU_STATE, TRUE, &payload,
                        sizeof(payload), NULL);
 }
 
 static void goodix_cmd_request_tls_connection(FpiSsm *ssm, FpDevice *dev) {
-  guint8 payload[] = {0x00, 0x00};
+  struct _payload {
+    guint16 none;
+  } __attribute__((packed)) payload = {.none = 0};
 
   fp_dbg("Goodix request tls connection");
 
   goodix_send_protocol(ssm, dev, GOODIX_CMD_REQUEST_TLS_CONNECTION, TRUE,
-                       payload, sizeof(payload), NULL);
+                       &payload, sizeof(payload), NULL);
 }
 
 static void goodix_cmd_tls_successfully_established(FpiSsm *ssm,
                                                     FpDevice *dev) {
-  guint8 payload[] = {0x00, 0x00};
+  struct _payload {
+    guint16 none;
+  } __attribute__((packed)) payload = {.none = 0};
 
   fp_dbg("Goodix tls successfully established");
 
   goodix_send_protocol(ssm, dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED, TRUE,
-                       payload, sizeof(payload), NULL);
+                       &payload, sizeof(payload), NULL);
 }
 
 static void goodix_cmd_preset_psk_write_r(FpiSsm *ssm, FpDevice *dev,
                                           guint32 address, gpointer psk,
-                                          guint32 length,
+                                          guint32 psk_len,
                                           GDestroyNotify destroy) {
   // Only support one address, one payload and one length
-  // Only work on little endian machine
 
-  gpointer payload = g_malloc(length + 8);
+  struct _payload {
+    guint32 address;
+    guint32 length;
+  } __attribute__((packed)) payload = {.address = GUINT32_TO_LE(address),
+                                       .length = GUINT32_TO_LE(psk_len)};
+  gpointer payload_ptr = g_malloc(sizeof(payload) + psk_len);
 
   fp_dbg("Goodix preset psk write r");
 
-  *(guint32 *)payload = address;
-  *((guint32 *)payload + 1) = length;
-  memcpy((guint8 *)payload + 8, psk, length);
+  memcpy(payload_ptr, &payload, sizeof(payload));
+  memcpy((guint8 *)payload_ptr + sizeof(payload), psk, psk_len);
   if (destroy) destroy(psk);
 
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_PRESET_PSK_WRITE_R, TRUE, payload,
-                       length + 8, g_free);
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_PRESET_PSK_WRITE_R, TRUE,
+                       payload_ptr, sizeof(payload) + psk_len, g_free);
 }
 
 static void goodix_cmd_preset_psk_read_r(FpiSsm *ssm, FpDevice *dev,
                                          guint32 address, guint32 length) {
-  // Only work on little endian machine
-
-  gpointer payload = g_malloc(8);
+  struct _payload {
+    guint32 address;
+    guint32 length;
+  } __attribute__((packed)) payload = {.address = GUINT32_TO_LE(address),
+                                       .length = GUINT32_TO_LE(length)};
 
   fp_dbg("Goodix preset psk read r");
 
-  *(guint32 *)payload = address;
-  *((guint32 *)payload + 1) = length;
-
-  goodix_send_protocol(ssm, dev, GOODIX_CMD_PRESET_PSK_READ_R, TRUE, payload, 8,
-                       g_free);
+  goodix_send_protocol(ssm, dev, GOODIX_CMD_PRESET_PSK_READ_R, TRUE, &payload,
+                       sizeof(payload), NULL);
 }
 
 /* ---- GOODIX SECTION END ---- */

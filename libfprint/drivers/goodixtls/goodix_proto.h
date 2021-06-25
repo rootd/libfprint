@@ -25,7 +25,7 @@
 #include <glib.h>
 
 #define GOODIX_MAX_DATA_WRITE 0x40
-#define GODDIX_MAX_DATA_READ 0x2000
+#define EP_IN_MAX_BUF_SIZE 0x2000
 
 #define GOODIX_FLAGS_MSG_PROTOCOL 0xA0
 #define GOODIX_FLAGS_TLS 0xB0

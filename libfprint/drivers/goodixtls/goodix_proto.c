@@ -31,8 +31,6 @@ guint8 goodix_calc_checksum(gpointer data, guint16 data_len) {
 
 gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
                          guint16 payload_len, GDestroyNotify payload_destroy) {
-  // Only work on little endian machine
-
   gsize data_ptr_len = payload_len + 4;
 
   if (data_ptr_len % GOODIX_MAX_DATA_WRITE)
@@ -42,7 +40,7 @@ gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
   *data = g_malloc0(data_ptr_len);  // Use g_malloc?
 
   *(guint8 *)*data = flags;
-  *(guint16 *)((guint8 *)*data + 1) = payload_len;
+  *(guint16 *)((guint8 *)*data + 1) = GUINT16_TO_LE(payload_len);
   *((guint8 *)*data + 3) = goodix_calc_checksum(*data, 3);
   memcpy((guint8 *)*data + 4, payload, payload_len);
   if (payload_destroy) payload_destroy(payload);
@@ -53,15 +51,12 @@ gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
 gsize goodix_encode_protocol(gpointer *data, guint8 cmd, gboolean calc_checksum,
                              gpointer payload, guint16 payload_len,
                              GDestroyNotify payload_destroy) {
-  // Only work on little endian machine
-
   gsize payload_ptr_len = payload_len + 4;
 
   *data = g_malloc(payload_ptr_len);
 
   *(guint8 *)*data = cmd;
-  *(guint16 *)((guint8 *)*data + 1) = payload_len + 1;
-
+  *(guint16 *)((guint8 *)*data + 1) = GUINT16_TO_LE(payload_len + 1);
   memcpy((guint8 *)*data + 3, payload, payload_len);
   if (payload_destroy) payload_destroy(payload);
 
@@ -77,8 +72,6 @@ gsize goodix_encode_protocol(gpointer *data, guint8 cmd, gboolean calc_checksum,
 guint16 goodix_decode_pack(guint8 *flags, gpointer *payload,
                            guint16 *payload_len, gpointer data, gsize data_len,
                            GDestroyNotify data_destroy, GError **error) {
-  // Only work on little endian machine
-
   guint16 payload_ptr_len = data_len - 4;
 
   if (data_len < 4) {
@@ -88,7 +81,7 @@ guint16 goodix_decode_pack(guint8 *flags, gpointer *payload,
   }
 
   *flags = *(guint8 *)data;
-  *payload_len = *(guint16 *)((guint8 *)data + 1);
+  *payload_len = GUINT16_FROM_LE(*(guint16 *)((guint8 *)data + 1));
 
   if (*payload_len <= payload_ptr_len) payload_ptr_len = *payload_len;
 
@@ -108,8 +101,6 @@ guint16 goodix_decode_protocol(guint8 *cmd, gboolean *invalid_checksum,
                                gpointer *payload, guint16 *payload_len,
                                gpointer data, gsize data_len,
                                GDestroyNotify data_destroy, GError **error) {
-  // Only work on little endian machine
-
   guint16 payload_ptr_len = data_len - 4;
 
   if (data_len < 4) {
@@ -119,7 +110,7 @@ guint16 goodix_decode_protocol(guint8 *cmd, gboolean *invalid_checksum,
   }
 
   *cmd = *(guint8 *)data;
-  *payload_len = *(guint16 *)((guint8 *)data + 1) - 1;
+  *payload_len = GUINT16_FROM_LE(*(guint16 *)((guint8 *)data + 1) - 1);
 
   if (*payload_len <= payload_ptr_len) {
     payload_ptr_len = *payload_len;

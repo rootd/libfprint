@@ -75,8 +75,6 @@ static const FpIdEntry id_table[] = {
     {.vid = 0, .pid = 0, .driver_data = 0},
 };
 
-static void goodix_dev_reset_state(FpiDeviceGoodixTls *goodixdev);
-
 static void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
                                    gpointer user_data, GError *error);
 
