@@ -24,34 +24,34 @@
 #include "drivers_api.h"
 #include <glib.h>
 
-#define GOODIX_MAX_DATA_WRITE 0x40
-#define EP_IN_MAX_BUF_SIZE 0x2000
+#define EP_IN_MAX_BUF_SIZE (0x2000)
+#define EP_OUT_MAX_BUF_SIZE (0x40)
 
-#define GOODIX_FLAGS_MSG_PROTOCOL 0xA0
-#define GOODIX_FLAGS_TLS 0xB0
+#define GOODIX_FLAGS_MSG_PROTOCOL (0xa0)
+#define GOODIX_FLAGS_TLS (0xb0)
 
-#define GOODIX_CMD_NOP 0x00
-#define GOODIX_CMD_MCU_GET_IMAGE 0x20
-#define GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN 0x32
-#define GOODIX_CMD_MCU_SWITCH_TO_FDT_UP 0x34
-#define GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE 0x36
-#define GOODIX_CMD_NAV_0 0x50
-#define GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE 0x70
-#define GOODIX_CMD_WRITE_SENSOR_REGISTER 0x80
-#define GOODIX_CMD_READ_SENSOR_REGISTER 0x82
-#define GOODIX_CMD_UPLOAD_CONFIG_MCU 0x90
-#define GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY 0x94
-#define GOODIX_CMD_ENABLE_CHIP 0x96
-#define GOODIX_CMD_RESET 0xA2
-#define GOODIX_CMD_MCU_ERASE_APP 0xA4
-#define GOODIX_CMD_READ_OTP 0xA6
-#define GOODIX_CMD_FIRMWARE_VERSION 0xA8
-#define GOODIX_CMD_QUERY_MCU_STATE 0xAE
-#define GOODIX_CMD_ACK 0xB0
-#define GOODIX_CMD_REQUEST_TLS_CONNECTION 0xD0
-#define GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED 0xD4
-#define GOODIX_CMD_PRESET_PSK_WRITE_R 0xE0
-#define GOODIX_CMD_PRESET_PSK_READ_R 0xE4
+#define GOODIX_CMD_NOP (0x00)
+#define GOODIX_CMD_MCU_GET_IMAGE (0x20)
+#define GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN (0x32)
+#define GOODIX_CMD_MCU_SWITCH_TO_FDT_UP (0x34)
+#define GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE (0x36)
+#define GOODIX_CMD_NAV_0 (0x50)
+#define GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE (0x70)
+#define GOODIX_CMD_WRITE_SENSOR_REGISTER (0x80)
+#define GOODIX_CMD_READ_SENSOR_REGISTER (0x82)
+#define GOODIX_CMD_UPLOAD_CONFIG_MCU (0x90)
+#define GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY (0x94)
+#define GOODIX_CMD_ENABLE_CHIP (0x96)
+#define GOODIX_CMD_RESET (0xa2)
+#define GOODIX_CMD_MCU_ERASE_APP (0xa4)
+#define GOODIX_CMD_READ_OTP (0xa6)
+#define GOODIX_CMD_FIRMWARE_VERSION (0xa8)
+#define GOODIX_CMD_QUERY_MCU_STATE (0xae)
+#define GOODIX_CMD_ACK (0xb0)
+#define GOODIX_CMD_REQUEST_TLS_CONNECTION (0xd0)
+#define GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED (0xd4)
+#define GOODIX_CMD_PRESET_PSK_WRITE_R (0xe0)
+#define GOODIX_CMD_PRESET_PSK_READ_R (0xe4)
 
 guint8 goodix_calc_checksum(gpointer data, guint16 data_len);
 
@@ -66,8 +66,8 @@ guint16 goodix_decode_pack(guint8 *flags, gpointer *payload,
                            guint16 *payload_len, gpointer data, gsize data_len,
                            GDestroyNotify data_destroy, GError **error);
 
-guint16 goodix_decode_protocol(guint8 *cmd, gboolean *invalid_checksum,
-                               gpointer *payload, guint16 *payload_len,
+guint16 goodix_decode_protocol(guint8 *cmd, gpointer *payload,
+                               guint16 *payload_len, gboolean calc_checksum,
                                gpointer data, gsize data_len,
                                GDestroyNotify data_destroy, GError **error);
 
