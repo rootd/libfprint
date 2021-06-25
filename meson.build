@@ -89,6 +89,9 @@ threads_dep = dependency('', required: false)
 # The following dependencies are only used for tests
 cairo_dep = dependency('cairo', required: false)
 
+# introspection scanning and Gio-2.0.gir
+gobject_introspection = dependency('gobject-introspection-1.0', required: get_option('introspection'))
+
 # Drivers
 drivers = get_option('drivers').split(',')
 virtual_drivers = [
@@ -98,6 +101,7 @@ virtual_drivers = [
 ]
 
 udev_drivers = [
+    'elanspi'
 ]
 
 default_drivers = [
@@ -164,6 +168,10 @@ nss_dep = dependency('', required: false)
 imaging_dep = dependency('', required: false)
 gudev_dep = dependency('', required: false)
 libfprint_conf.set10('HAVE_PIXMAN', false)
+
+udev_rules = get_option('udev_rules')
+install_udev_rules = udev_rules.enabled()
+
 foreach driver: drivers
     if driver == 'uru4000'
         nss_dep = dependency('nss', required: false)
@@ -171,7 +179,7 @@ foreach driver: drivers
             error('NSS is required for the URU4000/URU4500 driver')
         endif
     endif
-    if driver == 'aes3500' or driver == 'aes4000'
+    if driver == 'aes3500' or driver == 'aes4000' or driver == 'elanspi'
         imaging_dep = dependency('pixman-1', required: false)
         if not imaging_dep.found()
             error('pixman is required for imaging support')
@@ -189,18 +197,32 @@ foreach driver: drivers
             error('Threads is required for the Goodix TLS driver')
         endif
     endif
-	if udev_drivers.contains(driver)
-		gudev_dep = dependency('gudev-1.0', required: false)
-		if not gudev_dep.found()
-			error('udev is required for SPI support')
-		endif
+        if udev_drivers.contains(driver)
+            install_udev_rules = true
 
-		libfprint_conf.set10('HAVE_UDEV', true)
-	endif
+            gudev_dep = dependency('gudev-1.0', required: false)
+            if not gudev_dep.found()
+                error('udev is required for SPI support')
+            endif
+
+            libfprint_conf.set10('HAVE_UDEV', true)
+        endif
     if not all_drivers.contains(driver)
         error('Invalid driver \'' + driver + '\'')
     endif
 endforeach
+
+if udev_rules.disabled()
+    install_udev_rules = false
+endif
+
+if install_udev_rules
+    udev_rules_dir = get_option('udev_rules_dir')
+    if udev_rules_dir == 'auto'
+        udev_dep = dependency('udev')
+        udev_rules_dir = udev_dep.get_pkgconfig_variable('udevdir') + '/hwdb.d'
+    endif
+endif
 
 supported_drivers = []
 foreach driver: drivers

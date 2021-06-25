@@ -157,6 +157,9 @@ foreach driver: drivers
     if driver == 'elan'
         drivers_sources += [ 'drivers/elan.c' ]
     endif
+	if driver == 'elanspi'
+		drivers_sources += [ 'drivers/elanspi.c' ]
+	endif
     if driver == 'virtual_image'
         drivers_sources += [ 'drivers/virtual-image.c' ]
     endif
@@ -333,6 +336,23 @@ udev_hwdb_generator = custom_target('udev-hwdb',
     command: [ udev_hwdb ],
     install: false,
 )
+
+if install_udev_rules
+    udev_rules = executable('fprint-list-udev-rules',
+        'fprint-list-udev-rules.c',
+        dependencies: libfprint_private_dep,
+        link_with: libfprint_drivers,
+        install: false)
+
+    custom_target('udev-rules',
+        output: '70-@0@.rules'.format(versioned_libname),
+        depend_files: drivers_sources,
+        capture: true,
+        command: [ udev_rules ],
+        install: true,
+        install_dir: udev_rules_dir,
+    )
+endif
 
 custom_target('sync-udev-hwdb',
     depends: udev_hwdb_generator,
