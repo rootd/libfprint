@@ -1,7 +1,6 @@
 {
-    "files.associations": {
-        "drivers_api.h": "c",
-        "fpi-compat.h": "c",
-        "stdio.h": "c"
-    }
+  "files.associations": {
+    "*.c": "c",
+    "*.h": "c"
+  }
 }

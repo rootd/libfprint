@@ -21,47 +21,171 @@
 
 #include "goodix_proto.h"
 
-guint8 goodix_calculate_checksum(gpointer data, guint32 length) {
+guint8 goodix_calc_checksum(gpointer data, guint16 data_len) {
   guint8 checksum = 0;
 
-  for (guint32 i = 0; i < length; i++) checksum += *((guint8 *)data + i);
+  for (guint16 i = 0; i < data_len; i++) checksum += *((guint8 *)data + i);
 
   return checksum;
 }
 
-guint32 goodix_encode_message_pack(gpointer *payload, guint8 flags,
-                                   gpointer data, guint16 length) {
-  // Only work on little endian machine
+gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
+                         guint16 payload_len, GDestroyNotify payload_destroy) {
+  struct _pack {
+    guint8 flags;
+    guint16 length;
+    guint8 checksum;
+  } __attribute__((__packed__))
+  pack = {.flags = flags,
+          .length = GUINT16_TO_LE(payload_len),
+          .checksum = goodix_calc_checksum(&flags, sizeof(flags)) +
+                      goodix_calc_checksum(&payload_len, sizeof(payload_len))};
+  gsize data_ptr_len = sizeof(pack) + payload_len;
 
-  guint32 payload_length = length + 4;
-  gpointer payload_ptr = g_malloc(payload_length);
+  if (data_ptr_len % EP_OUT_MAX_BUF_SIZE)
+    data_ptr_len += EP_OUT_MAX_BUF_SIZE - data_ptr_len % EP_OUT_MAX_BUF_SIZE;
 
-  *(guint8 *)payload_ptr = flags;
-  *((guint16 *)payload_ptr + 1) = length;
-  *((guint8 *)payload_ptr + 3) = goodix_calculate_checksum(payload_ptr, 3);
-  memcpy((guint8 *)payload_ptr + 4, data, length);
+  *data = g_malloc0(data_ptr_len);
 
-  *payload = payload_ptr;
-  return payload_length;
+  memcpy(*data, &pack, sizeof(pack));
+  memcpy((guint8 *)*data + sizeof(pack), payload, payload_len);
+  if (payload_destroy) payload_destroy(payload);
+
+  return data_ptr_len;
 }
 
-guint32 goodix_encode_message_protocol(gpointer *payload, guint8 command,
-                                       gpointer data, guint16 length,
-                                       gboolean calculate_checksum) {
-  // Only work on little endian machine
+gsize goodix_encode_protocol(gpointer *data, guint8 cmd, gboolean calc_checksum,
+                             gpointer payload, guint16 payload_len,
+                             GDestroyNotify payload_destroy) {
+  struct _protocol {
+    guint8 cmd;
+    guint16 length;
+  } __attribute__((__packed__))
+  protocol = {.cmd = cmd, .length = GUINT16_TO_LE(payload_len) + 1};
+  gsize payload_ptr_len = sizeof(protocol) + payload_len + 1;
 
-  guint32 payload_length = length + 4;
-  gpointer payload_ptr = g_malloc(payload_length);
+  *data = g_malloc(payload_ptr_len);
 
-  *(guint8 *)payload_ptr = command;
-  *((guint16 *)payload_ptr + 1) = length;
-  memcpy((guint8 *)payload_ptr + 3, data, length);
-  if (calculate_checksum)
-    *((guint8 *)payload_ptr + payload_length - 1) =
-        0xaa - goodix_calculate_checksum(payload_ptr, payload_length - 1);
+  memcpy(*data, &protocol, sizeof(protocol));
+  memcpy((guint8 *)*data + sizeof(protocol), payload, payload_len);
+  if (payload_destroy) payload_destroy(payload);
+
+  if (calc_checksum)
+    *((guint8 *)*data + payload_ptr_len - 1) =
+        0xaa - goodix_calc_checksum(*data, payload_ptr_len - 1);
   else
-    *((guint8 *)payload_ptr + payload_length - 1) = 0x88;
+    *((guint8 *)*data + payload_ptr_len - 1) = 0x88;
 
-  *payload = payload_ptr;
-  return payload_length;
+  return payload_ptr_len;
+}
+
+guint16 goodix_decode_pack(guint8 *flags, gpointer *payload,
+                           guint16 *payload_len, gpointer data, gsize data_len,
+                           GDestroyNotify data_destroy, GError **error) {
+  struct _pack {
+    guint8 flags;
+    guint16 length;
+    guint8 checksum;
+  } __attribute__((__packed__)) pack;
+  guint16 payload_ptr_len = data_len - sizeof(pack);
+
+  if (data_len < sizeof(pack)) {
+    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                        "Invalid message pack length");
+    return 0;
+  }
+
+  memcpy(&pack, data, sizeof(pack));
+  pack.length = GUINT16_FROM_LE(pack.length);
+
+  if (payload_ptr_len >= pack.length) payload_ptr_len = pack.length;
+
+  if (goodix_calc_checksum(data, sizeof(pack) - 1) != pack.checksum) {
+    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                        "Invalid message pack checksum");
+    return 0;
+  }
+
+  *payload = g_memdup((guint8 *)data + sizeof(pack), payload_ptr_len);
+  if (data_destroy) data_destroy(data);
+
+  *flags = pack.flags;
+  *payload_len = pack.length;
+
+  return payload_ptr_len;
+}
+
+guint16 goodix_decode_protocol(guint8 *cmd, gpointer *payload,
+                               guint16 *payload_len, gboolean calc_checksum,
+                               gpointer data, gsize data_len,
+                               GDestroyNotify data_destroy, GError **error) {
+  struct _protocol {
+    guint8 cmd;
+    guint16 length;
+  } __attribute__((__packed__)) protocol;
+  guint16 payload_ptr_len = data_len - sizeof(protocol) - 1;
+
+  if (data_len - 1 < sizeof(protocol)) {
+    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                        "Invalid message protocol length");
+    return 0;
+  }
+
+  memcpy(&protocol, data, sizeof(protocol));
+  protocol.length = GUINT16_FROM_LE(protocol.length) - 1;
+
+  if (payload_ptr_len >= protocol.length) {
+    payload_ptr_len = protocol.length;
+
+    if (calc_checksum) {
+      if (*((guint8 *)data + sizeof(protocol) + protocol.length) !=
+          0xaa -
+              goodix_calc_checksum(data, sizeof(protocol) + protocol.length)) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                            "Invalid message protocol checksum");
+        return 0;
+      }
+    } else if (*((guint8 *)data + sizeof(protocol) + protocol.length) != 0x88) {
+      g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                          "Invalid message protocol checksum");
+      return 0;
+    }
+  }
+
+  *payload = g_memdup((guint8 *)data + sizeof(protocol), payload_ptr_len);
+  if (data_destroy) data_destroy(data);
+
+  *cmd = protocol.cmd;
+  *payload_len = protocol.length;
+
+  return payload_ptr_len;
+}
+
+gboolean goodix_decode_ack(guint8 *cmd, gpointer data, guint16 data_len,
+                           GDestroyNotify data_destroy, GError **error) {
+  struct _ack {
+    guint8 cmd;
+    guint8 always_true : 1;
+    guint8 has_no_config : 1;
+    guint8 : 6;
+  } __attribute__((__packed__)) ack;
+
+  if (data_len != sizeof(ack)) {
+    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                        "Invalid ack length");
+    return 0;
+  }
+
+  memcpy(&ack, data, sizeof(ack));
+  if (data_destroy) data_destroy(data);
+
+  if (!ack.always_true) {
+    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                        "Invalid ack always true value");
+    return 0;
+  }
+
+  *cmd = ack.cmd;
+
+  return ack.has_no_config;
 }
