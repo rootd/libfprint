@@ -54,7 +54,6 @@ struct _FpiDeviceGoodixMoc
   gint               enroll_stage;
   gint               max_enroll_stage;
   gint               max_stored_prints;
-  GCancellable      *cancellable;
   GPtrArray         *list_result;
   guint8             template_id[TEMPLATE_ID_SIZE];
   gboolean           is_enroll_identify;
@@ -220,7 +219,7 @@ fp_cmd_run_state (FpiSsm   *ssm,
       fpi_usb_transfer_fill_bulk (transfer, EP_IN, EP_IN_MAX_BUF_SIZE);
       fpi_usb_transfer_submit (transfer,
                                self->cmd_cancelable ? 0 : DATA_TIMEOUT,
-                               self->cmd_cancelable ? self->cancellable : NULL,
+                               self->cmd_cancelable ? fpi_device_get_cancellable (dev) : NULL,
                                fp_cmd_receive_cb,
                                fpi_ssm_get_data (ssm));
       break;
@@ -1318,6 +1317,10 @@ gx_fp_probe (FpDevice *device)
     {
     case 0x6496:
     case 0x60A2:
+    case 0x609C:
+    case 0x639C:
+    case 0x63AC:
+    case 0x6A94:
       self->max_enroll_stage = 12;
       break;
 
@@ -1347,8 +1350,6 @@ gx_fp_init (FpDevice *device)
 
   self->max_stored_prints = FP_MAX_FINGERNUM;
   self->is_power_button_shield_on = false;
-
-  self->cancellable = g_cancellable_new ();
 
   self->sensorcfg = g_new0 (gxfp_sensor_cfg_t, 1);
 
@@ -1387,7 +1388,6 @@ gx_fp_release_interface (FpiDeviceGoodixMoc *self,
 {
   g_autoptr(GError) release_error = NULL;
 
-  g_clear_object (&self->cancellable);
   g_clear_pointer (&self->sensorcfg, g_free);
 
   /* Release usb interface */
@@ -1537,27 +1537,18 @@ fpi_device_goodixmoc_init (FpiDeviceGoodixMoc *self)
 
 }
 
-static void
-gx_fp_cancel (FpDevice *device)
-{
-  FpiDeviceGoodixMoc *self = FPI_DEVICE_GOODIXMOC (device);
-
-  /* Cancel any current interrupt transfer (resulting us to go into
-   * response reading mode again); then create a new cancellable
-   * for the next transfers. */
-  g_cancellable_cancel (self->cancellable);
-  g_clear_object (&self->cancellable);
-  self->cancellable = g_cancellable_new ();
-
-}
-
 static const FpIdEntry id_table[] = {
   { .vid = 0x27c6,  .pid = 0x5840,  },
-  { .vid = 0x27c6,  .pid = 0x6496,  },
+  { .vid = 0x27c6,  .pid = 0x609C,  },
   { .vid = 0x27c6,  .pid = 0x60A2,  },
-  { .vid = 0x27c6,  .pid = 0x63AC,  },
   { .vid = 0x27c6,  .pid = 0x639C,  },
+  { .vid = 0x27c6,  .pid = 0x63AC,  },
+  { .vid = 0x27c6,  .pid = 0x6496,  },
+  { .vid = 0x27c6,  .pid = 0x6584,  },
+  { .vid = 0x27c6,  .pid = 0x658C,  },
+  { .vid = 0x27c6,  .pid = 0x6592,  },
   { .vid = 0x27c6,  .pid = 0x6594,  },
+  { .vid = 0x27c6,  .pid = 0x659C,  },
   { .vid = 0x27c6,  .pid = 0x6A94,  },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
@@ -1581,7 +1572,6 @@ fpi_device_goodixmoc_class_init (FpiDeviceGoodixMocClass *klass)
   dev_class->enroll = gx_fp_enroll;
   dev_class->delete = gx_fp_template_delete;
   dev_class->list   = gx_fp_template_list;
-  dev_class->cancel = gx_fp_cancel;
   dev_class->verify   = gx_fp_verify_identify;
   dev_class->identify = gx_fp_verify_identify;
 
