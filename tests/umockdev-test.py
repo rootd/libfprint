@@ -3,6 +3,7 @@
 import sys
 import os
 import os.path
+import glob
 import shutil
 import tempfile
 import subprocess
@@ -17,7 +18,8 @@ try:
     if version < (0, 13, 2):
         print('umockdev is too old for test to be reliable, expect random failures!')
         print('Please update umockdev to at least 0.13.2.')
-    pcap_supported = version >= (0, 15, 6) or os.getenv('CI_COMMIT_SHA') is not None
+    pcap_supported = version >= (0, 16) or os.getenv('CI_PROJECT_NAME') == "libfprint"
+    spi_supported = version >= (0, 16) or os.getenv('CI_PROJECT_NAME') == "libfprint"
 
 except FileNotFoundError:
     print('umockdev-run not found, skipping test!')
@@ -30,7 +32,6 @@ ddir = sys.argv[1]
 tmpdir = tempfile.mkdtemp(prefix='libfprint-umockdev-test-')
 
 assert os.path.isdir(ddir)
-assert os.path.isfile(os.path.join(ddir, "device"))
 
 def cmp_pngs(png_a, png_b):
     print("Comparing PNGs %s and %s" % (png_a, png_b))
@@ -59,14 +60,17 @@ def get_umockdev_runner(ioctl_basename):
     ioctl = os.path.join(ddir, "{}.ioctl".format(ioctl_basename))
     pcap = os.path.join(ddir, "{}.pcapng".format(ioctl_basename))
 
-    device = os.path.join(ddir, "device")
-
-    if os.path.exists(pcap):
+    devices = glob.glob(os.path.join(ddir, "device")) + glob.glob(os.path.join(ddir, "device-*[!~]"))
+    device_args = []
+    for device in devices:
         p = open(device).readline().strip()
         assert p.startswith('P: ')
+        device_args.extend(("-d", device))
+
+    if os.path.exists(pcap):
         syspath = '/sys' + p[3:]
 
-        umockdev = ['umockdev-run', '-d', device,
+        umockdev = ['umockdev-run', *device_args,
                     '-p', "%s=%s" % (syspath, pcap),
                     '--']
 
@@ -78,10 +82,17 @@ def get_umockdev_runner(ioctl_basename):
         dev = open(ioctl).readline().strip()
         assert dev.startswith('@DEV ')
         dev = dev[5:]
+        if dev.endswith(" (SPI)"):
+            dev = dev[:dev.rindex(" ")]
 
-        umockdev = ['umockdev-run', '-d', device,
+            # Skip test if we detect too old umockdev for spi replay
+            if not spi_supported:
+                sys.exit(77)
+
+        umockdev = ['umockdev-run', *device_args,
                     '-i', "%s=%s" % (dev, ioctl),
                     '--']
+
     wrapper = os.getenv('LIBFPRINT_TEST_WRAPPER')
     return umockdev + (wrapper.split(' ') if wrapper else []) + [sys.executable]
 
