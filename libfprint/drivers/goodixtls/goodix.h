@@ -26,6 +26,9 @@
 #include <openssl/ssl.h>
 #include <pthread.h>
 #include <stdint.h>
+#include "drivers_api.h"
+#include "goodix_proto.h"
+#include "goodixtls.h"
 
 #define GOODIX_INTERFACE (0)
 #define GOODIX_EP_OUT (0x1)
@@ -75,7 +78,125 @@ static const FpIdEntry id_table[] = {
     {.vid = 0, .pid = 0, .driver_data = 0},
 };
 
+gchar *data_to_str(gpointer data, gsize data_len);
+
+/* ---- GOODIX SECTION START ---- */
+
+static void goodix_receive_data(FpiSsm *ssm, FpDevice *dev, guint timeout);
+
+static void goodix_cmd_done(FpiSsm *ssm, FpDevice *dev, guint8 cmd);
+
+static void goodix_ack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
+                              gsize data_len, GDestroyNotify data_destroy);
+
+static void goodix_protocol_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
+                                   gsize data_len, GDestroyNotify data_destroy);
+
+static void goodix_pack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
+                               gsize data_len, GDestroyNotify data_destroy);
+
 static void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
                                    gpointer user_data, GError *error);
 
-gchar *data_to_str(gpointer data, gsize data_len);
+static void goodix_send_pack(FpiSsm *ssm, FpDevice *dev, guint8 flags,
+                             gpointer payload, guint16 payload_len,
+                             GDestroyNotify destroy);
+
+static void goodix_send_protocol(FpiSsm *ssm, FpDevice *dev, guint8 cmd,
+                                 gboolean calc_checksum, gpointer payload,
+                                 guint16 payload_len, GDestroyNotify destroy);
+
+static void goodix_cmd_nop(FpiSsm *ssm, FpDevice *dev);
+
+static void goodix_cmd_mcu_get_image(FpiSsm *ssm, FpDevice *dev);
+
+static void goodix_cmd_mcu_switch_to_fdt_down(FpiSsm *ssm, FpDevice *dev,
+                                              gpointer mode, guint16 mode_len,
+                                              GDestroyNotify destroy);
+
+static void goodix_cmd_mcu_switch_to_fdt_up(FpiSsm *ssm, FpDevice *dev,
+                                            gpointer mode, guint16 mode_len,
+                                            GDestroyNotify destroy);
+
+static void goodix_cmd_mcu_switch_to_fdt_mode(FpiSsm *ssm, FpDevice *dev,
+                                              gpointer mode, guint16 mode_len,
+                                              GDestroyNotify destroy);
+
+static void goodix_cmd_nav_0(FpiSsm *ssm, FpDevice *dev);
+
+static void goodix_cmd_mcu_switch_to_idle_mode(FpiSsm *ssm, FpDevice *dev,
+                                               guint8 sleep_time);
+
+static void goodix_cmd_write_sensor_register(FpiSsm *ssm, FpDevice *dev,
+                                             guint16 address, guint16 value);
+
+static void goodix_cmd_read_sensor_register(FpiSsm *ssm, FpDevice *dev,
+                                            guint16 address, guint8 length);
+
+static void goodix_cmd_upload_config_mcu(FpiSsm *ssm, FpDevice *dev,
+                                         gpointer config, guint16 config_len,
+                                         GDestroyNotify destroy);
+
+static void goodix_cmd_set_powerdown_scan_frequency(
+    FpiSsm *ssm, FpDevice *dev, guint16 powerdown_scan_frequency);
+
+static void goodix_cmd_enable_chip(FpiSsm *ssm, FpDevice *dev, gboolean enable);
+
+static void goodix_cmd_reset(FpiSsm *ssm, FpDevice *dev, gboolean reset_sensor,
+                             gboolean soft_reset_mcu, guint8 sleep_time);
+
+static void goodix_cmd_firmware_version(FpiSsm *ssm, FpDevice *dev);
+
+static void goodix_cmd_query_mcu_state(FpiSsm *ssm, FpDevice *dev);
+
+static void goodix_cmd_request_tls_connection(FpiSsm *ssm, FpDevice *dev);
+
+static void goodix_cmd_tls_successfully_established(FpiSsm *ssm, FpDevice *dev);
+
+static void goodix_cmd_preset_psk_write_r(FpiSsm *ssm, FpDevice *dev,
+                                          guint32 address, gpointer psk,
+                                          guint32 psk_len,
+                                          GDestroyNotify destroy);
+
+static void goodix_cmd_preset_psk_read_r(FpiSsm *ssm, FpDevice *dev,
+                                         guint32 address, guint32 length);
+
+/* ---- GOODIX SECTION END ---- */
+
+/* ------------------------------------------------------------------------- */
+
+/* ---- TLS SECTION START ---- */
+
+static void tls_run_state(FpiSsm *ssm, FpDevice *dev);
+
+static void tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
+
+static void goodix_tls(FpImageDevice *dev);
+
+/* ---- TLS SECTION END ---- */
+
+/* ------------------------------------------------------------------------- */
+
+/* ---- ACTIVE SECTION START ---- */
+
+static void activate_run_state(FpiSsm *ssm, FpDevice *dev);
+
+static void activate_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
+
+/* ---- ACTIVE SECTION END ---- */
+
+/* ------------------------------------------------------------------------- */
+
+/* ---- DEV SECTION START ---- */
+
+static void dev_init(FpImageDevice *dev);
+
+static void dev_deinit(FpImageDevice *dev);
+
+static void dev_activate(FpImageDevice *dev);
+
+static void dev_change_state(FpImageDevice *dev, FpiImageDeviceState state);
+
+static void dev_deactivate(FpImageDevice *dev);
+
+/* ---- DEV SECTION END ---- */

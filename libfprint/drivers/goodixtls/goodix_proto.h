@@ -55,11 +55,13 @@
 
 guint8 goodix_calc_checksum(gpointer data, guint16 data_len);
 
-gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
-                         guint16 payload_len, GDestroyNotify payload_destroy);
+gsize goodix_encode_pack(gpointer *data, gboolean pad_data, guint8 flags,
+                         gpointer payload, guint16 payload_len,
+                         GDestroyNotify payload_destroy);
 
-gsize goodix_encode_protocol(gpointer *data, guint8 cmd, gboolean calc_checksum,
-                             gpointer payload, guint16 payload_len,
+gsize goodix_encode_protocol(gpointer *data, gboolean pad_data, guint8 cmd,
+                             gboolean calc_checksum, gpointer payload,
+                             guint16 payload_len,
                              GDestroyNotify payload_destroy);
 
 guint16 goodix_decode_pack(guint8 *flags, gpointer *payload,

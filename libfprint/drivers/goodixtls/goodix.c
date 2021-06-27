@@ -21,9 +21,6 @@
 
 #define FP_COMPONENT "goodixtls"
 
-#include "drivers_api.h"
-#include "goodix_proto.h"
-#include "goodixtls.h"
 #include "goodix.h"
 
 struct _FpiDeviceGoodixTls {
@@ -422,7 +419,8 @@ static void goodix_send_pack(FpiSsm *ssm, FpDevice *dev, guint8 flags,
   transfer->ssm = ssm;
   transfer->short_is_error = TRUE;
 
-  data_len = goodix_encode_pack(&data, flags, payload, payload_len, destroy);
+  data_len =
+      goodix_encode_pack(&data, TRUE, flags, payload, payload_len, destroy);
 
   for (gsize i = 0; i < data_len; i += EP_OUT_MAX_BUF_SIZE) {
     fpi_usb_transfer_fill_bulk_full(transfer, GOODIX_EP_OUT, (guint8 *)data + i,
@@ -453,7 +451,7 @@ static void goodix_send_protocol(FpiSsm *ssm, FpDevice *dev, guint8 cmd,
 
   FPI_DEVICE_GOODIXTLS(dev)->current_cmd = cmd;
 
-  data_len = goodix_encode_protocol(&data, cmd, calc_checksum, payload,
+  data_len = goodix_encode_protocol(&data, FALSE, cmd, calc_checksum, payload,
                                     payload_len, destroy);
 
   goodix_send_pack(ssm, dev, GOODIX_FLAGS_MSG_PROTOCOL, data, data_len, g_free);

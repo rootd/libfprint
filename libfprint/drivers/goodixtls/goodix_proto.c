@@ -29,8 +29,9 @@ guint8 goodix_calc_checksum(gpointer data, guint16 data_len) {
   return checksum;
 }
 
-gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
-                         guint16 payload_len, GDestroyNotify payload_destroy) {
+gsize goodix_encode_pack(gpointer *data, gboolean pad_data, guint8 flags,
+                         gpointer payload, guint16 payload_len,
+                         GDestroyNotify payload_destroy) {
   struct _pack {
     guint8 flags;
     guint16 length;
@@ -42,7 +43,7 @@ gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
                       goodix_calc_checksum(&payload_len, sizeof(payload_len))};
   gsize data_ptr_len = sizeof(pack) + payload_len;
 
-  if (data_ptr_len % EP_OUT_MAX_BUF_SIZE)
+  if (pad_data && data_ptr_len % EP_OUT_MAX_BUF_SIZE)
     data_ptr_len += EP_OUT_MAX_BUF_SIZE - data_ptr_len % EP_OUT_MAX_BUF_SIZE;
 
   *data = g_malloc0(data_ptr_len);
@@ -54,29 +55,33 @@ gsize goodix_encode_pack(gpointer *data, guint8 flags, gpointer payload,
   return data_ptr_len;
 }
 
-gsize goodix_encode_protocol(gpointer *data, guint8 cmd, gboolean calc_checksum,
-                             gpointer payload, guint16 payload_len,
+gsize goodix_encode_protocol(gpointer *data, gboolean pad_data, guint8 cmd,
+                             gboolean calc_checksum, gpointer payload,
+                             guint16 payload_len,
                              GDestroyNotify payload_destroy) {
   struct _protocol {
     guint8 cmd;
     guint16 length;
   } __attribute__((__packed__))
   protocol = {.cmd = cmd, .length = GUINT16_TO_LE(payload_len) + 1};
-  gsize payload_ptr_len = sizeof(protocol) + payload_len + 1;
+  gsize data_ptr_len = sizeof(protocol) + payload_len + 1;
 
-  *data = g_malloc(payload_ptr_len);
+  if (pad_data && data_ptr_len % EP_OUT_MAX_BUF_SIZE)
+    data_ptr_len += EP_OUT_MAX_BUF_SIZE - data_ptr_len % EP_OUT_MAX_BUF_SIZE;
+
+  *data = g_malloc0(data_ptr_len);
 
   memcpy(*data, &protocol, sizeof(protocol));
   memcpy((guint8 *)*data + sizeof(protocol), payload, payload_len);
   if (payload_destroy) payload_destroy(payload);
 
   if (calc_checksum)
-    *((guint8 *)*data + payload_ptr_len - 1) =
-        0xaa - goodix_calc_checksum(*data, payload_ptr_len - 1);
+    *((guint8 *)*data + sizeof(protocol) + payload_len) =
+        0xaa - goodix_calc_checksum(*data, sizeof(protocol) + payload_len);
   else
-    *((guint8 *)*data + payload_ptr_len - 1) = 0x88;
+    *((guint8 *)*data + sizeof(protocol) + payload_len) = 0x88;
 
-  return payload_ptr_len;
+  return data_ptr_len;
 }
 
 guint16 goodix_decode_pack(guint8 *flags, gpointer *payload,
