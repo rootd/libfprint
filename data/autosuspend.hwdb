@@ -213,7 +213,7 @@ usb:v138Ap0018*
 usb:v138Ap0091*
  ID_AUTOSUSPEND=1
 
-# Supported by libfprint driver goodixtls
+# Supported by libfprint driver goodixtls511
 usb:v27c6p5110*
  ID_AUTOSUSPEND=1
 

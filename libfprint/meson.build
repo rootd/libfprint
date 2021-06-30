@@ -189,8 +189,8 @@ foreach driver: drivers
         'drivers/nb1010.c',
     ]
     endif
-    if driver == 'goodixtls'
-    drivers_sources += ['drivers/goodixtls/goodix.c', 'drivers/goodixtls/goodixtls.c', 'drivers/goodixtls/goodix_proto.c']
+    if driver == 'goodixtls511'
+    drivers_sources += ['drivers/goodixtls/goodix_proto.c', 'drivers/goodixtls/goodix.c', 'drivers/goodixtls/goodix511.c', 'drivers/goodixtls/goodixtls.c']
     endif
 endforeach
 

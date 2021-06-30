@@ -21,25 +21,12 @@
 
 #pragma once
 
-#include <arpa/inet.h>
-#include <errno.h>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
-#include <pthread.h>
-#include <signal.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include "drivers_api.h"
-
-static const char *psk_key =
-    "ba1a86037c1d3c71c3af344955bd69a9a9861d9e911fa24985b677e8dbd72d43";
-
 #define GOODIX_TLS_SERVER_PORT 4433
 
 //#define TLS_PSK_WITH_AES_128_GCM_SHA256  ((const unsigned char *)"\x00\xa8")
+
+static const char *psk_key =
+    "ba1a86037c1d3c71c3af344955bd69a9a9861d9e911fa24985b677e8dbd72d43";
 
 SSL_CTX *tls_server_create_ctx(void);
 

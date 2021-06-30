@@ -19,6 +19,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <gio/gio.h>
+#include <glib.h>
+
 #include "goodix_proto.h"
 
 guint8 goodix_calc_checksum(gpointer data, guint16 data_len) {
@@ -43,8 +46,9 @@ gsize goodix_encode_pack(gpointer *data, gboolean pad_data, guint8 flags,
                       goodix_calc_checksum(&payload_len, sizeof(payload_len))};
   gsize data_ptr_len = sizeof(pack) + payload_len;
 
-  if (pad_data && data_ptr_len % EP_OUT_MAX_BUF_SIZE)
-    data_ptr_len += EP_OUT_MAX_BUF_SIZE - data_ptr_len % EP_OUT_MAX_BUF_SIZE;
+  if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
+    data_ptr_len +=
+        GOODIX_EP_OUT_MAX_BUF_SIZE - data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE;
 
   *data = g_malloc0(data_ptr_len);
 
@@ -66,8 +70,9 @@ gsize goodix_encode_protocol(gpointer *data, gboolean pad_data, guint8 cmd,
   protocol = {.cmd = cmd, .length = GUINT16_TO_LE(payload_len) + 1};
   gsize data_ptr_len = sizeof(protocol) + payload_len + 1;
 
-  if (pad_data && data_ptr_len % EP_OUT_MAX_BUF_SIZE)
-    data_ptr_len += EP_OUT_MAX_BUF_SIZE - data_ptr_len % EP_OUT_MAX_BUF_SIZE;
+  if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
+    data_ptr_len +=
+        GOODIX_EP_OUT_MAX_BUF_SIZE - data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE;
 
   *data = g_malloc0(data_ptr_len);
 

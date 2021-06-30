@@ -128,7 +128,7 @@ default_drivers = [
     'upekts',
     'goodixmoc',
     'nb1010',
-    'goodixtls'
+    'goodixtls511'
 ]
 
 # FIXME: All the drivers should be fixed by adjusting the byte order.
@@ -187,7 +187,7 @@ foreach driver: drivers
 
         libfprint_conf.set10('HAVE_PIXMAN', true)
     endif
-    if driver == 'goodixtls'
+    if driver == 'goodixtls511'
         openssl_dep = dependency('openssl', required: false)
         if not openssl_dep.found()
             error('OpenSSL is required for the Goodix TLS driver')

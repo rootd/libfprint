@@ -21,11 +21,8 @@
 
 #pragma once
 
-#include "drivers_api.h"
-#include <glib.h>
-
-#define EP_IN_MAX_BUF_SIZE (0x2000)
-#define EP_OUT_MAX_BUF_SIZE (0x40)
+#define GOODIX_EP_IN_MAX_BUF_SIZE (0x2000)
+#define GOODIX_EP_OUT_MAX_BUF_SIZE (0x40)
 
 #define GOODIX_FLAGS_MSG_PROTOCOL (0xa0)
 #define GOODIX_FLAGS_TLS (0xb0)

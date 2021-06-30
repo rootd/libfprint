@@ -19,6 +19,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <arpa/inet.h>
+#include <errno.h>
+#include <glib.h>
+#include <netinet/in.h>
+#include <openssl/crypto.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <pthread.h>
+#include <signal.h>
+#include <string.h>
+#include <sys/socket.h>
+
+#include "drivers_api.h"
 #include "goodixtls.h"
 
 int sock;
