@@ -1,23 +1,21 @@
-/*
- * Goodix Tls driver for libfprint
- *
- * Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
- * Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
- */
+// Goodix Tls driver for libfprint
+
+// Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
+// Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
+
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+
+// You should have received a copy of the GNU Lesser General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 #define FP_COMPONENT "goodixtls"
 
@@ -57,7 +55,7 @@ static gchar *data_to_str(gpointer data, gsize data_len) {
   return g_steal_pointer(&data_str);
 }
 
-/* ---- GOODIX SECTION START ---- */
+// ---- GOODIX SECTION START ----
 
 void goodix_receive_data(FpiSsm *ssm, FpDevice *dev, gboolean timeout) {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
@@ -288,131 +286,6 @@ void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
 
 failed:
   fpi_ssm_mark_failed(transfer->ssm, error);
-
-  // /* XXX: We used to reset the device in error cases! */
-  // if (transfer->endpoint & FPI_USB_ENDPOINT_IN) {
-  //   /* just finished receiving */
-  //   self->last_read = g_memdup(transfer->buffer, transfer->actual_length);
-  //   // fp_dbg("%lu", transfer->actual_length);
-  //   // Some devices send multiple replies, so we need to catch them
-  //   // 0xb0 equels the ACK packet
-  //   // Special case: Reading firmware
-  //   if (self->cmd->cmd == read_fw.cmd) {
-  //     if (transfer->actual_length == self->cmd->response_len &&
-  //         self->last_read[4] == 0xb0) {
-  //       // We got ACK, now wait for the firmware version
-  //       G_DEBUG_HERE();
-  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
-  //     } else {
-  //       // Reading the firmware version
-  //       self->fw_ver = g_memdup(&self->last_read[7],
-  //       self->cmd->response_len_2); G_DEBUG_HERE(); goodix_cmd_done(ssm);
-  //     }
-  //   }
-  //   // Special case: Reading PSK hash
-  //   else if (self->cmd->cmd == read_psk.cmd) {
-  //     if (transfer->actual_length == self->cmd->response_len &&
-  //         self->last_read[4] == 0xb0) {
-  //       // We got ACK, now wait for the PSK
-  //       G_DEBUG_HERE();
-  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
-  //     } else {
-  //       /*fp_dbg("%lu", transfer->actual_length);
-  //       gint i;
-  //       for (i = 16; i < GOODIX_PSK_LEN+16; i++)
-  //       {
-  //         fp_dbg("%02x", self->last_read[i]);
-  //       }*/
-
-  //       // Reading the PSK
-  //       self->sensor_psk_hash = g_memdup(&self->last_read[16],
-  //       GOODIX_PSK_LEN); G_DEBUG_HERE(); goodix_cmd_done(ssm);
-  //     }
-  //   }
-  //   // Special case: Setting MCU config
-  //   else if (self->cmd->cmd == mcu_set_config.cmd) {
-  //     if (transfer->actual_length == self->cmd->response_len &&
-  //         self->last_read[4] == 0xb0) {
-  //       // We got ACK, now wait for the PSK
-  //       G_DEBUG_HERE();
-  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
-  //     } else {
-  //       G_DEBUG_HERE();
-  //       goodix_cmd_done(ssm);
-  //     }
-  //   }
-  //   // Special case: Setting scan frequency
-  //   else if (self->cmd->cmd == set_powerdown_scan_frequency.cmd) {
-  //     if (transfer->actual_length == self->cmd->response_len &&
-  //         self->last_read[4] == 0xb0) {
-  //       // We got ACK, now wait for the second packet
-  //       G_DEBUG_HERE();
-  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
-  //     } else {
-  //       G_DEBUG_HERE();
-  //       goodix_cmd_done(ssm);
-  //     }
-  //   }
-  //   // Special case: Requesting TLS connection
-  //   else if (self->cmd->cmd == mcu_request_tls_connection.cmd) {
-  //     if (transfer->actual_length == self->cmd->response_len &&
-  //         self->last_read[4] == 0xb0) {
-  //       // We got ACK, now wait for the second packet
-  //       self->cmd_recv_counter = 1;
-  //       G_DEBUG_HERE();
-  //       goodix_receive_data(ssm, dev, self->cmd->response_len_2);
-  //     } else if (self->cmd_recv_counter == 1) {
-  //       // Read 56 byte packet
-  //       self->cmd_recv_counter = 2;
-  //       G_DEBUG_HERE();
-  //       self->tls_msg_1 = g_memdup(&self->last_read,
-  //       self->cmd->response_len_2); goodix_receive_data(ssm, dev,
-  //       self->cmd->response_len_3);
-  //     }
-  //     /*else if(self->cmd_recv_counter == 2)
-  //     {
-  //       // Read first 64 byte packet
-  //       self->cmd_recv_counter = 3;
-  //       G_DEBUG_HERE ();
-  //       self->tls_msg_2 = g_memdup (&self->last_read,
-  //     self->cmd->response_len_3); goodix_receive_data (ssm, dev,
-  //     self->cmd->response_len_4);
-  //     }*/
-  //     else {
-  //       // Read second 64 byte packet
-  //       self->cmd_recv_counter = 0;
-  //       G_DEBUG_HERE();
-  //       self->tls_msg_2 = g_memdup(&self->last_read,
-  //       self->cmd->response_len_3);
-
-  //       fp_dbg("\n");
-
-  //       gint i;
-  //       for (i = 0; i < self->cmd->response_len_2; i++) {
-  //         fp_dbg("%02x", self->tls_msg_1[i]);
-  //       }
-  //       fp_dbg("\n");
-  //       for (i = 0; i < self->cmd->response_len_3; i++) {
-  //         fp_dbg("%02x", self->tls_msg_2[i]);
-  //       }
-
-  //       fp_dbg("\n");
-  //       /*for (i = 0; i < 64; i++)
-  //       {
-  //         fp_dbg("%02x", self->tls_msg_3[i]);
-  //       }*/
-  //       fp_dbg("\n");
-
-  //       goodix_cmd_done(ssm);
-  //     }
-  //   } else {
-  //     goodix_cmd_done(ssm);
-  //   }
-  // } else {
-  //   /* just finished sending */
-  //   G_DEBUG_HERE();
-  //   goodix_receive_data(ssm, dev, self->cmd->response_len);
-  // }
 }
 
 void goodix_send_pack(FpiSsm *ssm, FpDevice *dev, guint8 flags,
@@ -713,17 +586,15 @@ void goodix_cmd_preset_psk_read_r(FpiSsm *ssm, FpDevice *dev, guint32 address,
                        sizeof(payload), NULL);
 }
 
-/* ---- GOODIX SECTION END ---- */
+// ---- GOODIX SECTION END ----
 
-/* -------------------------------------------------------------------------
- */
+// -----------------------------------------------------------------------------
 
-/* ---- TLS SECTION START ---- */
+// ---- TLS SECTION START ----
 
 enum tls_states {
   TLS_SERVER_INIT,
   TLS_SERVER_HANDSHAKE_INIT,
-  // TLS_MCU_REQUEST_CONNECTION,
   TLS_NUM_STATES,
 };
 
@@ -738,8 +609,6 @@ void tls_run_state(FpiSsm *ssm, FpDevice *dev) {
     case TLS_SERVER_HANDSHAKE_INIT:
       tls_server_handshake_init();
       break;
-
-      // case TLS_MCU_REQUEST_CONNECTION:
   }
 }
 
@@ -755,7 +624,7 @@ void goodix_tls(FpDevice *dev) {
   fpi_ssm_start(fpi_ssm_new(dev, tls_run_state, TLS_NUM_STATES), tls_complete);
 }
 
-/* ---- TLS SECTION END ---- */
+// ---- TLS SECTION END ----
 
 static void fpi_device_goodixtls_init(FpiDeviceGoodixTls *self) {}
 

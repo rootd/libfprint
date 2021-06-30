@@ -1,23 +1,21 @@
-/*
- * Goodix Tls driver for libfprint
- *
- * Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
- * Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
- */
+// Goodix Tls driver for libfprint
+
+// Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
+// Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
+
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+
+// You should have received a copy of the GNU Lesser General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 #pragma once
 
@@ -36,7 +34,7 @@ struct _FpiDeviceGoodixTlsClass {
   guint8 ep_out;
 };
 
-/* ---- GOODIX SECTION START ---- */
+// ---- GOODIX SECTION START ----
 
 void goodix_receive_data(FpiSsm *ssm, FpDevice *dev, gboolean timeout);
 
@@ -114,11 +112,11 @@ void goodix_cmd_preset_psk_write_r(FpiSsm *ssm, FpDevice *dev, guint32 address,
 void goodix_cmd_preset_psk_read_r(FpiSsm *ssm, FpDevice *dev, guint32 address,
                                   guint32 length);
 
-/* ---- GOODIX SECTION END ---- */
+// ---- GOODIX SECTION END ----
 
-/* ------------------------------------------------------------------------- */
+// -----------------------------------------------------------------------------
 
-/* ---- TLS SECTION START ---- */
+// ---- TLS SECTION START ----
 
 void tls_run_state(FpiSsm *ssm, FpDevice *dev);
 
@@ -126,4 +124,4 @@ void tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
 
 void goodix_tls(FpDevice *dev);
 
-/* ---- TLS SECTION END ---- */
+// ---- TLS SECTION END ----

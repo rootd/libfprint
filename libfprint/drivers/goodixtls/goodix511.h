@@ -1,23 +1,21 @@
-/*
- * Goodix Tls driver for libfprint
- *
- * Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
- * Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
- */
+// Goodix Tls driver for libfprint
+
+// Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
+// Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
+
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+
+// You should have received a copy of the GNU Lesser General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 #pragma once
 
@@ -63,17 +61,17 @@ static const FpIdEntry id_table[] = {
     {.vid = 0, .pid = 0, .driver_data = 0},
 };
 
-/* ---- ACTIVE SECTION START ---- */
+// ---- ACTIVE SECTION START ----
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev);
 
 static void activate_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
 
-/* ---- ACTIVE SECTION END ---- */
+// ---- ACTIVE SECTION END ----
 
-/* ------------------------------------------------------------------------- */
+// -----------------------------------------------------------------------------
 
-/* ---- DEV SECTION START ---- */
+// ---- DEV SECTION START ----
 
 static void dev_init(FpImageDevice *dev);
 
@@ -85,4 +83,4 @@ static void dev_change_state(FpImageDevice *dev, FpiImageDeviceState state);
 
 static void dev_deactivate(FpImageDevice *dev);
 
-/* ---- DEV SECTION END ---- */
+// ---- DEV SECTION END ----

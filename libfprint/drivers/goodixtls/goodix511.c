@@ -1,23 +1,21 @@
-/*
- * Goodix Tls driver for libfprint
- *
- * Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
- * Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
- */
+// Goodix Tls driver for libfprint
+
+// Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
+// Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
+
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+
+// You should have received a copy of the GNU Lesser General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 #define FP_COMPONENT "goodixtls511"
 
@@ -38,7 +36,7 @@ G_DECLARE_FINAL_TYPE(FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,
 G_DEFINE_TYPE(FpiDeviceGoodixTls511, fpi_device_goodixtls511,
               FPI_TYPE_DEVICE_GOODIXTLS);
 
-/* ---- ACTIVE SECTION START ---- */
+// ---- ACTIVE SECTION START ----
 
 enum activate_states {
   ACTIVATE_READ_AND_NOP,
@@ -74,49 +72,9 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       goodix_cmd_firmware_version(ssm, dev);
       break;
 
-      // case ACTIVATE_VERIFY_FW_VER:
-      //   if (!strcmp(self->fw_ver, GOODIX_FIRMWARE_VERSION_SUPPORTED)) {
-      //     // The firmware version is supported
-      //     fpi_ssm_next_state(ssm);
-      //   } else {
-      //     // The firmware version is unsupported
-      //     fpi_ssm_mark_failed(ssm,
-      //                         fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL,
-      //                                                  "Unsupported
-      //                                                  firmware!"));
-      //   }
-      //   break;
-
     case ACTIVATE_CHECK_PSK:
       goodix_cmd_preset_psk_read_r(ssm, dev, 0xbb020003, 0);
       break;
-
-      // case ACTIVATE_VERIFY_PSK:
-      //   /*for (i = 0; i < GOODIX_PSK_LEN; i++)
-      //   {
-      //     fp_dbg("%02x", self->sensor_psk_hash[i]);
-      //   }
-
-      //   fp_dbg("-----");
-
-      //   for (i = 0; i < GOODIX_PSK_LEN; i++)
-      //   {
-      //     fp_dbg("%02x", zero_psk_hash[i]);
-      //   }*/
-
-      //   // The PSK hash matches the Zero-PSK hash
-      //   if (!memcmp(self->sensor_psk_hash, &zero_psk_hash,
-      //               sizeof(&self->sensor_psk_hash))) {
-      //     // fpi_ssm_mark_completed (ssm);
-      //     fpi_ssm_next_state(ssm);
-      //   } else {
-      //     // The PSK hash doesn't match
-      //     fpi_ssm_mark_failed(ssm,
-      //                         fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL,
-      //                                                  "PSK doesn't
-      //                                                  match!"));
-      //   }
-      //   break;
 
     case ACTIVATE_SET_MCU_IDLE:
       goodix_cmd_mcu_switch_to_idle_mode(ssm, dev, 20);
@@ -143,11 +101,11 @@ static void activate_complete(FpiSsm *ssm, FpDevice *dev, GError *error) {
   if (!error) goodix_tls(dev);
 }
 
-/* ---- ACTIVE SECTION END ---- */
+// ---- ACTIVE SECTION END ----
 
-/* ------------------------------------------------------------------------- */
+// -----------------------------------------------------------------------------
 
-/* ---- DEV SECTION START ---- */
+// ---- DEV SECTION START ----
 
 static void dev_init(FpImageDevice *img_dev) {
   FpDevice *dev = FP_DEVICE(img_dev);
@@ -191,9 +149,6 @@ static void dev_activate(FpImageDevice *img_dev) {
 static void dev_change_state(FpImageDevice *img_dev,
                              FpiImageDeviceState state) {
   G_DEBUG_HERE();
-
-  // if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
-  //   goodix_tls(FPI_DEVICE_GOODIX(dev));
 }
 
 static void dev_deactivate(FpImageDevice *img_dev) {
@@ -202,7 +157,7 @@ static void dev_deactivate(FpImageDevice *img_dev) {
   fpi_image_device_deactivate_complete(img_dev, NULL);
 }
 
-/* ---- DEV SECTION END ---- */
+// ---- DEV SECTION END ----
 
 static void fpi_device_goodixtls511_init(FpiDeviceGoodixTls511 *self) {}
 

@@ -1,23 +1,21 @@
-/*
- * Goodix Tls driver for libfprint
- *
- * Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
- * Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
- */
+// Goodix Tls driver for libfprint
+
+// Copyright (C) 2021 Alexander Meiler <alex.meiler@protonmail.com>
+// Copyright (C) 2021 Matthieu CHARETTE <matthieu.charette@gmail.com>
+
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+
+// You should have received a copy of the GNU Lesser General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -49,14 +47,10 @@ static unsigned int tls_server_psk_server_callback(SSL *ssl,
   key = OPENSSL_hexstr2buf(psk_key, &key_len);
   if (key == NULL) {
     fp_dbg("OpenSSL cannot convert provided PSK");
-    // fpi_ssm_mark_failed (ssm, fpi_device_error_new_msg
-    // (FP_DEVICE_ERROR_GENERAL, "OpenSSL cannot convert provided PSK"));
     return 0;
   }
   if (key_len > (int)max_psk_len) {
     fp_dbg("Provided PSK is too long for OpenSSL");
-    // fpi_ssm_mark_failed (ssm, fpi_device_error_new_msg
-    // (FP_DEVICE_ERROR_GENERAL, "Provided PSK is too long for OpenSSL"));
     OPENSSL_free(key);
     return 0;
   }
@@ -103,12 +97,6 @@ int tls_server_create_socket(int port) {
   return s;
 }
 
-// EVP_cleanup is deprecated
-/*void TLS_server_cleanup()
-{
-    EVP_cleanup();
-}*/
-
 SSL_CTX *tls_server_create_ctx(void) {
   const SSL_METHOD *method;
 
@@ -133,7 +121,7 @@ void tls_server_config_ctx(void) {
 }
 
 void *tls_server_loop(void *arg) {
-  /* Handle connections */
+  // Handle connections
   while (1) {
     struct sockaddr_in addr;
     guint len = sizeof(addr);
