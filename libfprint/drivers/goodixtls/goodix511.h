@@ -60,27 +60,3 @@ static const FpIdEntry id_table[] = {
     {.vid = 0x27c6, .pid = 0x5110},
     {.vid = 0, .pid = 0, .driver_data = 0},
 };
-
-// ---- ACTIVE SECTION START ----
-
-static void activate_run_state(FpiSsm *ssm, FpDevice *dev);
-
-static void activate_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
-
-// ---- ACTIVE SECTION END ----
-
-// -----------------------------------------------------------------------------
-
-// ---- DEV SECTION START ----
-
-static void dev_init(FpImageDevice *dev);
-
-static void dev_deinit(FpImageDevice *dev);
-
-static void dev_activate(FpImageDevice *dev);
-
-static void dev_change_state(FpImageDevice *dev, FpiImageDeviceState state);
-
-static void dev_deactivate(FpImageDevice *dev);
-
-// ---- DEV SECTION END ----

@@ -30,6 +30,7 @@ G_DECLARE_DERIVABLE_TYPE(FpiDeviceGoodixTls, fpi_device_goodixtls, FPI,
 struct _FpiDeviceGoodixTlsClass {
   FpImageDeviceClass parent;
 
+  gint interface;
   guint8 ep_in;
   guint8 ep_out;
 };
@@ -116,11 +117,21 @@ void goodix_cmd_preset_psk_read_r(FpiSsm *ssm, FpDevice *dev, guint32 address,
 
 // -----------------------------------------------------------------------------
 
+// ---- DEV SECTION START ----
+
+gboolean goodix_dev_init(FpDevice *dev, GError **error);
+
+gboolean goodix_dev_deinit(FpDevice *dev, GError **error);
+
+// ---- DEV SECTION END ----
+
+// -----------------------------------------------------------------------------
+
 // ---- TLS SECTION START ----
 
-void tls_run_state(FpiSsm *ssm, FpDevice *dev);
+void goodix_tls_run_state(FpiSsm *ssm, FpDevice *dev);
 
-void tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
+void goodix_tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
 
 void goodix_tls(FpDevice *dev);
 

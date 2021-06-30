@@ -113,8 +113,7 @@ static void dev_init(FpImageDevice *img_dev) {
 
   G_DEBUG_HERE();
 
-  if (!g_usb_device_claim_interface(fpi_device_get_usb_device(dev),
-                                    GOODIX_INTERFACE, 0, &error)) {
+  if (goodix_dev_init(dev, &error)) {
     fpi_image_device_open_complete(img_dev, error);
     return;
   }
@@ -128,8 +127,7 @@ static void dev_deinit(FpImageDevice *img_dev) {
 
   G_DEBUG_HERE();
 
-  if (!g_usb_device_release_interface(fpi_device_get_usb_device(dev),
-                                      GOODIX_INTERFACE, 0, &error)) {
+  if (goodix_dev_deinit(dev, &error)) {
     fpi_image_device_close_complete(img_dev, error);
     return;
   }
@@ -169,6 +167,7 @@ static void fpi_device_goodixtls511_class_init(
 
   G_DEBUG_HERE();
 
+  gx_class->interface = GOODIX_INTERFACE;
   gx_class->ep_in = GOODIX_EP_IN;
   gx_class->ep_out = GOODIX_EP_OUT;
 
