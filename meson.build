@@ -83,8 +83,6 @@ gio_dep = dependency('gio-unix-2.0', version: '>=' + glib_min_version)
 gobject_dep = dependency('gobject-2.0', version: '>=' + glib_min_version)
 gusb_dep = dependency('gusb', version: '>= 0.2.0')
 mathlib_dep = cc.find_library('m', required: false)
-openssl_dep = dependency('', required: false)
-threads_dep = dependency('', required: false)
 
 # The following dependencies are only used for tests
 cairo_dep = dependency('cairo', required: false)
@@ -123,8 +121,8 @@ default_drivers = [
     'upeksonly',
     'upekts',
     'goodixmoc',
-    'nb1010',
     'goodixtls511',
+    'nb1010',
 
     # SPI
     'elanspi',
@@ -157,6 +155,7 @@ driver_helper_mapping = {
     'aes4000' : [ 'aeslib', 'aes3k' ],
     'uru4000' : [ 'nss' ],
     'elanspi' : [ 'udev' ],
+    'goodixtls511' : [ 'goodixtls' ],
     'virtual_image'          : [ 'virtual' ],
     'virtual_device'         : [ 'virtual' ],
     'virtual_device_storage' : [ 'virtual' ],
@@ -211,18 +210,19 @@ foreach i : driver_helpers
         endif
 
         libfprint_conf.set10('HAVE_PIXMAN', true)
-    elif driver == 'goodixtls511'
+        optional_deps += imaging_dep
+    elif i == 'goodixtls'
         openssl_dep = dependency('openssl', required: false)
         if not openssl_dep.found()
-            error('OpenSSL is required for the Goodix TLS driver')
+            error('openssl is required for @0@ and possibly others'.format(driver))
         endif
+        optional_deps += openssl_dep
+
         threads_dep = dependency('threads', required: false)
         if not threads_dep.found()
-            error('Threads is required for the Goodix TLS driver')
+            error('threads is required for @0@ and possibly others'.format(driver))
         endif
-        if udev_drivers.contains(driver)
-            install_udev_rules = true
-        optional_deps += imaging_dep
+        optional_deps += threads_dep
     elif i == 'nss'
         nss_dep = dependency('nss', required: false)
         if not nss_dep.found()

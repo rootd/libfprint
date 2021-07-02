@@ -135,8 +135,8 @@ driver_sources = {
         [ 'drivers/synaptics/synaptics.c', 'drivers/synaptics/bmkt_message.c' ],
     'goodixmoc' :
         [ 'drivers/goodixmoc/goodix.c', 'drivers/goodixmoc/goodix_proto.c' ],
-    'goodix511' :
-        ['drivers/goodixtls/goodix_proto.c', 'drivers/goodixtls/goodix.c', 'drivers/goodixtls/goodix511.c', 'drivers/goodixtls/goodixtls.c'],
+    'goodixtls511' :
+        [ 'drivers/goodixtls/goodix511.c' ],
 }
 
 helper_sources = {
@@ -146,6 +146,8 @@ helper_sources = {
         [ 'drivers/aesx660.c' ],
     'aes3k' :
         [ 'drivers/aes3k.c' ],
+    'goodixtls' :
+        [ 'drivers/goodixtls/goodix_proto.c', 'drivers/goodixtls/goodix.c', 'drivers/goodixtls/goodixtls.c' ],
     'nss' :
         [ ],
     'udev' :
@@ -218,10 +220,6 @@ deps = [
     gobject_dep,
     gusb_dep,
     mathlib_dep,
-    nss_dep,
-    openssl_dep,
-    threads_dep,
-]
 ] + optional_deps
 
 # These are empty and only exist so that the include directories are created
