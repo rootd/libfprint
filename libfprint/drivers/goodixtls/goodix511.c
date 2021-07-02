@@ -57,36 +57,36 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
     case ACTIVATE_READ_AND_NOP:
       // Nop seems to clear the previous command buffer. But we are unable to do
       // so.
-      goodix_receive_data(ssm, dev);
+      goodix_receive_data(ssm);
       // DON'T ADD A BREAK HERE!
     case ACTIVATE_NOP:
-      goodix_cmd_nop(ssm, dev);
-      goodix_cmd_done(ssm, dev);
+      goodix_cmd_nop(ssm);
+      goodix_cmd_done(ssm);
       break;
 
     case ACTIVATE_ENABLE_CHIP:
-      goodix_cmd_enable_chip(ssm, dev, TRUE);
+      goodix_cmd_enable_chip(ssm, TRUE);
       break;
 
     case ACTIVATE_CHECK_FW_VER:
-      goodix_cmd_firmware_version(ssm, dev);
+      goodix_cmd_firmware_version(ssm);
       break;
 
     case ACTIVATE_CHECK_PSK:
-      goodix_cmd_preset_psk_read_r(ssm, dev, 0xbb020003, 0);
+      goodix_cmd_preset_psk_read_r(ssm, 0xbb020003, 0);
       break;
 
     case ACTIVATE_SET_MCU_IDLE:
-      goodix_cmd_mcu_switch_to_idle_mode(ssm, dev, 20);
+      goodix_cmd_mcu_switch_to_idle_mode(ssm, 20);
       break;
 
     case ACTIVATE_SET_MCU_CONFIG:
-      goodix_cmd_upload_config_mcu(ssm, dev, device_config,
-                                   sizeof(device_config), NULL);
+      goodix_cmd_upload_config_mcu(ssm, device_config, sizeof(device_config),
+                                   NULL);
       break;
 
     case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY:
-      goodix_cmd_set_powerdown_scan_frequency(ssm, dev, 100);
+      goodix_cmd_set_powerdown_scan_frequency(ssm, 100);
       break;
   }
 }
