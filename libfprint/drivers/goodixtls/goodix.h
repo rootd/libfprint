@@ -37,18 +37,25 @@ struct _FpiDeviceGoodixTlsClass {
 
 // ---- GOODIX SECTION START ----
 
-void goodix_receive_data(FpiSsm *ssm, FpDevice *dev, gboolean timeout);
+void goodix_receive_data(FpiSsm *ssm, FpDevice *dev);
 
-void goodix_cmd_done(FpiSsm *ssm, FpDevice *dev, guint8 cmd);
+void goodix_cmd_done(FpiSsm *ssm, FpDevice *dev);
 
 void goodix_ack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
-                       gsize data_len, GDestroyNotify data_destroy);
+                       gsize data_len, GDestroyNotify data_destroy,
+                       GError **error);
+
+void goodix_cmd_handle(FpiSsm *ssm, FpDevice *dev, guint8 cmd, gpointer data,
+                       gsize data_len, GDestroyNotify data_destroy,
+                       GError **error);
 
 void goodix_protocol_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
-                            gsize data_len, GDestroyNotify data_destroy);
+                            gsize data_len, GDestroyNotify data_destroy,
+                            GError **error);
 
 void goodix_pack_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
-                        gsize data_len, GDestroyNotify data_destroy);
+                        gsize data_len, GDestroyNotify data_destroy,
+                        GError **error);
 
 void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
                             gpointer user_data, GError *error);
@@ -58,8 +65,9 @@ void goodix_send_pack(FpiSsm *ssm, FpDevice *dev, guint8 flags,
                       GDestroyNotify destroy);
 
 void goodix_send_protocol(FpiSsm *ssm, FpDevice *dev, guint8 cmd,
-                          gboolean calc_checksum, gpointer payload,
-                          guint16 payload_len, GDestroyNotify destroy);
+                          gboolean calc_checksum, gboolean reply,
+                          gpointer payload, guint16 payload_len,
+                          GDestroyNotify payload_destroy);
 
 void goodix_cmd_nop(FpiSsm *ssm, FpDevice *dev);
 

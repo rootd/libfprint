@@ -38,7 +38,6 @@
 #define GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY (0x94)
 #define GOODIX_CMD_ENABLE_CHIP (0x96)
 #define GOODIX_CMD_RESET (0xa2)
-#define GOODIX_CMD_MCU_ERASE_APP (0xa4)
 #define GOODIX_CMD_READ_OTP (0xa6)
 #define GOODIX_CMD_FIRMWARE_VERSION (0xa8)
 #define GOODIX_CMD_QUERY_MCU_STATE (0xae)
@@ -47,6 +46,8 @@
 #define GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED (0xd4)
 #define GOODIX_CMD_PRESET_PSK_WRITE_R (0xe0)
 #define GOODIX_CMD_PRESET_PSK_READ_R (0xe4)
+
+// TODO use GByteArray
 
 guint8 goodix_calc_checksum(gpointer data, guint16 data_len);
 

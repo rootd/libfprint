@@ -51,17 +51,19 @@ enum activate_states {
 };
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
+  GError *error = NULL;
+
   G_DEBUG_HERE();
 
   switch (fpi_ssm_get_cur_state(ssm)) {
     case ACTIVATE_READ_AND_NOP:
       // Nop seems to clear the previous command buffer. But we are unable to do
       // so.
-      goodix_receive_data(ssm, dev, GOODIX_TIMEOUT);
+      goodix_receive_data(ssm, dev);
       // DON'T ADD A BREAK HERE!
     case ACTIVATE_NOP:
       goodix_cmd_nop(ssm, dev);
-      goodix_cmd_done(ssm, dev, GOODIX_CMD_NOP);
+      goodix_cmd_done(ssm, dev);
       break;
 
     case ACTIVATE_ENABLE_CHIP:
@@ -69,6 +71,8 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       break;
 
     case ACTIVATE_CHECK_FW_VER:
+      g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "Break");
+      fpi_ssm_mark_failed(ssm, error);
       goodix_cmd_firmware_version(ssm, dev);
       break;
 
