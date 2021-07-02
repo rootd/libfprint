@@ -78,10 +78,6 @@ void goodix_receive_data(FpiSsm *ssm, FpDevice *dev) {
 }
 
 void goodix_cmd_done(FpiSsm *ssm, FpDevice *dev) {
-  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiDeviceGoodixTlsPrivate *priv =
-      fpi_device_goodixtls_get_instance_private(self);
-
   G_DEBUG_HERE();
 
   fpi_ssm_next_state(ssm);
@@ -161,34 +157,10 @@ void goodix_protocol_handle(FpiSsm *ssm, FpDevice *dev, gpointer data,
   }
 
   switch (cmd) {
-    case GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN:
-      break;
-    case GOODIX_CMD_MCU_SWITCH_TO_FDT_UP:
-      break;
-    case GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE:
-      break;
-    case GOODIX_CMD_NAV_0:
-      break;
-    case GOODIX_CMD_READ_SENSOR_REGISTER:
-      break;
-    case GOODIX_CMD_UPLOAD_CONFIG_MCU:
-      break;
-    case GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY:
-      break;
-    case GOODIX_CMD_RESET:
-      break;
-    case GOODIX_CMD_READ_OTP:
-      break;
-    case GOODIX_CMD_FIRMWARE_VERSION:
-      break;
-    case GOODIX_CMD_QUERY_MCU_STATE:
-      break;
-    case GOODIX_CMD_PRESET_PSK_WRITE_R:
-      break;
-    case GOODIX_CMD_PRESET_PSK_READ_R:
-      break;
     default:
-      fp_warn("Unknown command: 0x%02x", cmd);
+      // fp_warn("Unknown command: 0x%02x", cmd);
+      g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                  "Unknown command: 0x%02x", cmd);
       goto free;
   }
 

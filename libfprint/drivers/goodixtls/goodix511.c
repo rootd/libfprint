@@ -51,8 +51,6 @@ enum activate_states {
 };
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
-  GError *error = NULL;
-
   G_DEBUG_HERE();
 
   switch (fpi_ssm_get_cur_state(ssm)) {
@@ -71,8 +69,6 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       break;
 
     case ACTIVATE_CHECK_FW_VER:
-      g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "Break");
-      fpi_ssm_mark_failed(ssm, error);
       goodix_cmd_firmware_version(ssm, dev);
       break;
 
