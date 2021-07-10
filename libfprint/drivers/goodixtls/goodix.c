@@ -91,8 +91,9 @@ void goodix_ack_handle(FpiSsm *ssm, gpointer data, gsize data_len,
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
   guint8 cmd;
-  gboolean has_no_config =
-      goodix_decode_ack(&cmd, data, data_len, data_destroy, error);
+  gboolean has_no_config;
+
+  goodix_decode_ack(&cmd, &has_no_config, data, data_len, data_destroy, error);
 
   if (*error) return;
 

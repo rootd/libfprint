@@ -47,8 +47,6 @@
 #define GOODIX_CMD_PRESET_PSK_WRITE_R (0xe0)
 #define GOODIX_CMD_PRESET_PSK_READ_R (0xe4)
 
-// TODO use GByteArray
-
 guint8 goodix_calc_checksum(gpointer data, guint16 data_len);
 
 gsize goodix_encode_pack(gpointer *data, gboolean pad_data, guint8 flags,
@@ -69,5 +67,6 @@ guint16 goodix_decode_protocol(guint8 *cmd, gpointer *payload,
                                gpointer data, gsize data_len,
                                GDestroyNotify data_destroy, GError **error);
 
-gboolean goodix_decode_ack(guint8 *cmd, gpointer data, guint16 data_len,
-                           GDestroyNotify data_destroy, GError **error);
+void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, gpointer data,
+                       guint16 data_len, GDestroyNotify data_destroy,
+                       GError **error);

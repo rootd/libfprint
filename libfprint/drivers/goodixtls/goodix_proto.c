@@ -169,8 +169,9 @@ guint16 goodix_decode_protocol(guint8 *cmd, gpointer *payload,
   return payload_ptr_len;
 }
 
-gboolean goodix_decode_ack(guint8 *cmd, gpointer data, guint16 data_len,
-                           GDestroyNotify data_destroy, GError **error) {
+void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, gpointer data,
+                       guint16 data_len, GDestroyNotify data_destroy,
+                       GError **error) {
   struct _ack {
     guint8 cmd;
     guint8 always_true : 1;
@@ -181,7 +182,7 @@ gboolean goodix_decode_ack(guint8 *cmd, gpointer data, guint16 data_len,
   if (data_len != sizeof(ack)) {
     g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                         "Invalid ack length");
-    return 0;
+    return;
   }
 
   memcpy(&ack, data, sizeof(ack));
@@ -190,10 +191,9 @@ gboolean goodix_decode_ack(guint8 *cmd, gpointer data, guint16 data_len,
   if (!ack.always_true) {
     g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                         "Invalid ack always true value");
-    return 0;
+    return;
   }
 
   *cmd = ack.cmd;
-
-  return ack.has_no_config;
+  *has_no_config = ack.has_no_config;
 }
