@@ -43,40 +43,40 @@ void goodix_receive_data(FpiSsm *ssm);
 
 void goodix_cmd_done(FpiSsm *ssm);
 
-void goodix_ack_handle(FpiSsm *ssm, gpointer data, gsize data_len,
+void goodix_ack_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
                        GDestroyNotify data_destroy, GError **error);
 
-void goodix_cmd_handle(FpiSsm *ssm, guint8 cmd, gpointer data, gsize data_len,
+void goodix_cmd_handle(FpiSsm *ssm, guint8 cmd, guint8 *data, gsize data_len,
                        GDestroyNotify data_destroy, GError **error);
 
-void goodix_protocol_handle(FpiSsm *ssm, gpointer data, gsize data_len,
+void goodix_protocol_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
                             GDestroyNotify data_destroy, GError **error);
 
-void goodix_pack_handle(FpiSsm *ssm, gpointer data, gsize data_len,
+void goodix_pack_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
                         GDestroyNotify data_destroy, GError **error);
 
 void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
                             gpointer user_data, GError *error);
 
-void goodix_send_pack(FpiSsm *ssm, guint8 flags, gpointer payload,
+void goodix_send_pack(FpiSsm *ssm, guint8 flags, guint8 *payload,
                       guint16 payload_len, GDestroyNotify destroy);
 
 void goodix_send_protocol(FpiSsm *ssm, guint8 cmd, gboolean calc_checksum,
-                          gboolean reply, gpointer payload, guint16 payload_len,
+                          gboolean reply, guint8 *payload, guint16 payload_len,
                           GDestroyNotify payload_destroy);
 
 void goodix_cmd_nop(FpiSsm *ssm);
 
 void goodix_cmd_mcu_get_image(FpiSsm *ssm);
 
-void goodix_cmd_mcu_switch_to_fdt_down(FpiSsm *ssm, gpointer mode,
+void goodix_cmd_mcu_switch_to_fdt_down(FpiSsm *ssm, guint8 *mode,
                                        guint16 mode_len,
                                        GDestroyNotify destroy);
 
-void goodix_cmd_mcu_switch_to_fdt_up(FpiSsm *ssm, gpointer mode,
+void goodix_cmd_mcu_switch_to_fdt_up(FpiSsm *ssm, guint8 *mode,
                                      guint16 mode_len, GDestroyNotify destroy);
 
-void goodix_cmd_mcu_switch_to_fdt_mode(FpiSsm *ssm, gpointer mode,
+void goodix_cmd_mcu_switch_to_fdt_mode(FpiSsm *ssm, guint8 *mode,
                                        guint16 mode_len,
                                        GDestroyNotify destroy);
 
@@ -90,7 +90,7 @@ void goodix_cmd_write_sensor_register(FpiSsm *ssm, guint16 address,
 void goodix_cmd_read_sensor_register(FpiSsm *ssm, guint16 address,
                                      guint8 length);
 
-void goodix_cmd_upload_config_mcu(FpiSsm *ssm, gpointer config,
+void goodix_cmd_upload_config_mcu(FpiSsm *ssm, guint8 *config,
                                   guint16 config_len, GDestroyNotify destroy);
 
 void goodix_cmd_set_powerdown_scan_frequency(FpiSsm *ssm,
@@ -109,7 +109,7 @@ void goodix_cmd_request_tls_connection(FpiSsm *ssm);
 
 void goodix_cmd_tls_successfully_established(FpiSsm *ssm);
 
-void goodix_cmd_preset_psk_write_r(FpiSsm *ssm, guint32 address, gpointer psk,
+void goodix_cmd_preset_psk_write_r(FpiSsm *ssm, guint32 address, guint8 *psk,
                                    guint32 psk_len, GDestroyNotify destroy);
 
 void goodix_cmd_preset_psk_read_r(FpiSsm *ssm, guint32 address, guint32 length);

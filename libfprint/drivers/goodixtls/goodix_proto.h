@@ -47,26 +47,26 @@
 #define GOODIX_CMD_PRESET_PSK_WRITE_R (0xe0)
 #define GOODIX_CMD_PRESET_PSK_READ_R (0xe4)
 
-guint8 goodix_calc_checksum(gpointer data, guint16 data_len);
+guint8 goodix_calc_checksum(guint8 *data, guint16 data_len);
 
-gsize goodix_encode_pack(gpointer *data, gboolean pad_data, guint8 flags,
-                         gpointer payload, guint16 payload_len,
+gsize goodix_encode_pack(guint8 **data, gboolean pad_data, guint8 flags,
+                         guint8 *payload, guint16 payload_len,
                          GDestroyNotify payload_destroy);
 
-gsize goodix_encode_protocol(gpointer *data, gboolean pad_data, guint8 cmd,
-                             gboolean calc_checksum, gpointer payload,
+gsize goodix_encode_protocol(guint8 **data, gboolean pad_data, guint8 cmd,
+                             gboolean calc_checksum, guint8 *payload,
                              guint16 payload_len,
                              GDestroyNotify payload_destroy);
 
-guint16 goodix_decode_pack(guint8 *flags, gpointer *payload,
-                           guint16 *payload_len, gpointer data, gsize data_len,
+guint16 goodix_decode_pack(guint8 *flags, guint8 **payload,
+                           guint16 *payload_len, guint8 *data, gsize data_len,
                            GDestroyNotify data_destroy, GError **error);
 
-guint16 goodix_decode_protocol(guint8 *cmd, gpointer *payload,
+guint16 goodix_decode_protocol(guint8 *cmd, guint8 **payload,
                                guint16 *payload_len, gboolean calc_checksum,
-                               gpointer data, gsize data_len,
+                               guint8 *data, gsize data_len,
                                GDestroyNotify data_destroy, GError **error);
 
-void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, gpointer data,
+void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, guint8 *data,
                        guint16 data_len, GDestroyNotify data_destroy,
                        GError **error);
