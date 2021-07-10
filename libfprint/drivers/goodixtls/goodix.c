@@ -116,6 +116,7 @@ void goodix_protocol_handle(FpiSsm *ssm, gpointer data, gsize data_len,
                             GDestroyNotify data_destroy, GError **error) {
   FpDevice *dev = fpi_ssm_get_device(ssm);
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+  FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
   guint8 cmd;
@@ -159,6 +160,18 @@ void goodix_protocol_handle(FpiSsm *ssm, gpointer data, gsize data_len,
   }
 
   switch (cmd) {
+    case GOODIX_CMD_FIRMWARE_VERSION:
+      // Some device send to firmware without the null terminator
+      payload = g_realloc(payload, payload_ptr_len + 1);
+      *((guint8 *)payload + payload_ptr_len) = 0;
+      if (strcmp(payload, class->firmware_version)) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                    "Invalid device firmware. Supported: \"%s\", Got: \"%s\"",
+                    class->firmware_version, (gchar *)payload);
+        goto free;
+      }
+      fp_dbg("Valid device firmware: %s", (gchar *)payload);
+      break;
     default:
       // fp_warn("Unknown command: 0x%02x", cmd);
       g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,

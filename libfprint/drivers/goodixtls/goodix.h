@@ -33,6 +33,8 @@ struct _FpiDeviceGoodixTlsClass {
   gint interface;
   guint8 ep_in;
   guint8 ep_out;
+
+  gchar *firmware_version;
 };
 
 // ---- GOODIX SECTION START ----

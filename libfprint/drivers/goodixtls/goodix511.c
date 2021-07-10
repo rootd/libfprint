@@ -170,6 +170,7 @@ static void fpi_device_goodixtls511_class_init(
   gx_class->interface = GOODIX_INTERFACE;
   gx_class->ep_in = GOODIX_EP_IN;
   gx_class->ep_out = GOODIX_EP_OUT;
+  gx_class->firmware_version = GOODIX_FIRMWARE_VERSION_SUPPORTED;
 
   dev_class->id = "goodixtls511";
   dev_class->full_name = "Goodix TLS Fingerprint Sensor 511";
