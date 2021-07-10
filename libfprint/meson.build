@@ -117,10 +117,14 @@ driver_sources = {
         [ 'drivers/upektc_img.c',  'drivers/upek_proto.c' ],
     'etes603' :
         [ 'drivers/etes603.c' ],
+    'egis0570' :
+        [ 'drivers/egis0570.c' ],
     'vfs0050' :
         [ 'drivers/vfs0050.c' ],
     'elan' :
         [ 'drivers/elan.c' ],
+    'elanmoc' :
+        [ 'drivers/elanmoc/elanmoc.c' ],
     'elanspi' :
         [ 'drivers/elanspi.c' ],
     'nb1010' :

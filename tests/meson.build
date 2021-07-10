@@ -24,6 +24,7 @@ envs.set('NO_AT_BRIDGE', '1')
 drivers_tests = [
     'aes3500',
     'elan',
+    'elanmoc',
     'elanspi',
     'synaptics',
     'vfs0050',
@@ -32,6 +33,7 @@ drivers_tests = [
     'vfs7552',
     'goodixmoc',
     'nb1010',
+    'egis0570',
 ]
 
 if get_option('introspection')
