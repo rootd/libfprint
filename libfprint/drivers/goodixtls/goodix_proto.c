@@ -96,11 +96,13 @@ guint16 goodix_decode_pack(guint8 *flags, guint8 **payload,
     guint16 length;
     guint8 checksum;
   } __attribute__((__packed__)) pack;
+  guint8 checksum;
   guint16 payload_ptr_len = data_len - sizeof(pack);
 
   if (data_len < sizeof(pack)) {
-    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                        "Invalid message pack length");
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid message pack length: %ld < expected (%ld)", data_len,
+                sizeof(pack));
     return 0;
   }
 
@@ -109,9 +111,11 @@ guint16 goodix_decode_pack(guint8 *flags, guint8 **payload,
 
   if (payload_ptr_len >= pack.length) payload_ptr_len = pack.length;
 
-  if (goodix_calc_checksum(data, sizeof(pack) - 1) != pack.checksum) {
-    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                        "Invalid message pack checksum");
+  checksum = goodix_calc_checksum(data, sizeof(pack) - 1);
+  if (checksum != pack.checksum) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid message pack checksum: 0x%02x != expected (0x%02x)",
+                checksum, pack.checksum);
     return 0;
   }
 
@@ -132,11 +136,13 @@ guint16 goodix_decode_protocol(guint8 *cmd, guint8 **payload,
     guint8 cmd;
     guint16 length;
   } __attribute__((__packed__)) protocol;
+  guint8 checksum;
   guint16 payload_ptr_len = data_len - sizeof(protocol) - 1;
 
   if (data_len - 1 < sizeof(protocol)) {
-    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                        "Invalid message protocol length");
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid message protocol length: %ld < expected (%ld)",
+                data_len - 1, sizeof(protocol));
     return 0;
   }
 
@@ -147,16 +153,20 @@ guint16 goodix_decode_protocol(guint8 *cmd, guint8 **payload,
     payload_ptr_len = protocol.length;
 
     if (calc_checksum) {
-      if (*(data + sizeof(protocol) + protocol.length) !=
-          0xaa -
-              goodix_calc_checksum(data, sizeof(protocol) + protocol.length)) {
-        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                            "Invalid message protocol checksum");
+      checksum =
+          0xaa - goodix_calc_checksum(data, sizeof(protocol) + protocol.length);
+      if (checksum != *(data + sizeof(protocol) + protocol.length)) {
+        g_set_error(
+            error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+            "Invalid message protocol checksum: 0x%02x != expected (0x%02x)",
+            checksum, *(data + sizeof(protocol) + protocol.length));
         return 0;
       }
-    } else if (*(data + sizeof(protocol) + protocol.length) != 0x88) {
-      g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                          "Invalid message protocol checksum");
+    } else if (0x88 != *(data + sizeof(protocol) + protocol.length)) {
+      g_set_error(
+          error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+          "Invalid message protocol checksum: 0x88 != expected (0x%02x)",
+          *(data + sizeof(protocol) + protocol.length));
       return 0;
     }
   }
@@ -181,8 +191,9 @@ void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, guint8 *data,
   } __attribute__((__packed__)) ack;
 
   if (data_len != sizeof(ack)) {
-    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                        "Invalid ack length");
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid ack length: %d != expected (%ld)", data_len,
+                sizeof(ack));
     return;
   }
 
@@ -190,8 +201,8 @@ void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, guint8 *data,
   if (data_destroy) data_destroy(data);
 
   if (!ack.always_true) {
-    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                        "Invalid ack always true value");
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid ack flags: FALSE != expected (TRUE)");
     return;
   }
 

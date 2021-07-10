@@ -51,8 +51,6 @@ enum activate_states {
 };
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
-  G_DEBUG_HERE();
-
   switch (fpi_ssm_get_cur_state(ssm)) {
     case ACTIVATE_READ_AND_NOP:
       // Nop seems to clear the previous command buffer. But we are unable to do
@@ -93,8 +91,6 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
 static void activate_complete(FpiSsm *ssm, FpDevice *dev, GError *error) {
   FpImageDevice *image_dev = FP_IMAGE_DEVICE(dev);
 
-  G_DEBUG_HERE();
-
   fpi_image_device_activate_complete(image_dev, error);
 
   if (!error) goodix_tls(dev);
@@ -110,8 +106,6 @@ static void dev_init(FpImageDevice *img_dev) {
   FpDevice *dev = FP_DEVICE(img_dev);
   GError *error = NULL;
 
-  G_DEBUG_HERE();
-
   if (goodix_dev_init(dev, &error)) {
     fpi_image_device_open_complete(img_dev, error);
     return;
@@ -124,8 +118,6 @@ static void dev_deinit(FpImageDevice *img_dev) {
   FpDevice *dev = FP_DEVICE(img_dev);
   GError *error = NULL;
 
-  G_DEBUG_HERE();
-
   if (goodix_dev_deinit(dev, &error)) {
     fpi_image_device_close_complete(img_dev, error);
     return;
@@ -137,20 +129,14 @@ static void dev_deinit(FpImageDevice *img_dev) {
 static void dev_activate(FpImageDevice *img_dev) {
   FpDevice *dev = FP_DEVICE(img_dev);
 
-  G_DEBUG_HERE();
-
   fpi_ssm_start(fpi_ssm_new(dev, activate_run_state, ACTIVATE_NUM_STATES),
                 activate_complete);
 }
 
 static void dev_change_state(FpImageDevice *img_dev,
-                             FpiImageDeviceState state) {
-  G_DEBUG_HERE();
-}
+                             FpiImageDeviceState state) {}
 
 static void dev_deactivate(FpImageDevice *img_dev) {
-  G_DEBUG_HERE();
-
   fpi_image_device_deactivate_complete(img_dev, NULL);
 }
 
@@ -163,8 +149,6 @@ static void fpi_device_goodixtls511_class_init(
   FpiDeviceGoodixTlsClass *gx_class = FPI_DEVICE_GOODIXTLS_CLASS(class);
   FpDeviceClass *dev_class = FP_DEVICE_CLASS(class);
   FpImageDeviceClass *img_dev_class = FP_IMAGE_DEVICE_CLASS(class);
-
-  G_DEBUG_HERE();
 
   gx_class->interface = GOODIX_INTERFACE;
   gx_class->ep_in = GOODIX_EP_IN;

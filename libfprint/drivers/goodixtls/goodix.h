@@ -41,7 +41,7 @@ struct _FpiDeviceGoodixTlsClass {
 
 void goodix_receive_data(FpiSsm *ssm);
 
-void goodix_cmd_done(FpiSsm *ssm);
+void goodix_cmd_done(FpiSsm *ssm, guint8 cmd);
 
 void goodix_ack_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
                        GDestroyNotify data_destroy, GError **error);
