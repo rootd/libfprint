@@ -171,7 +171,8 @@ void goodix_protocol_handle(FpiSsm *ssm, gpointer data, gsize data_len,
         goto free;
       }
       fp_dbg("Valid device firmware: %s", (gchar *)payload);
-      break;
+      goto done;
+
     default:
       // fp_warn("Unknown command: 0x%02x", cmd);
       g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
@@ -179,6 +180,7 @@ void goodix_protocol_handle(FpiSsm *ssm, gpointer data, gsize data_len,
       goto free;
   }
 
+done:
   goodix_cmd_done(ssm);
 
 free:
@@ -320,6 +322,8 @@ void goodix_cmd_nop(FpiSsm *ssm) {
 
   goodix_send_protocol(ssm, GOODIX_CMD_NOP, FALSE, FALSE, &payload,
                        sizeof(payload), NULL);
+
+  goodix_cmd_done(ssm);
 }
 
 void goodix_cmd_mcu_get_image(FpiSsm *ssm) {
