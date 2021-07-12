@@ -63,7 +63,7 @@ void goodix_receive_data(FpiSsm *ssm) {
 }
 
 void goodix_cmd_done(FpiSsm *ssm, guint8 cmd) {
-  fp_dbg("Completed command 0x%02x", cmd);
+  fp_dbg("Completed command: 0x%02x", cmd);
 
   fpi_ssm_next_state(ssm);
 }
@@ -84,13 +84,12 @@ void goodix_ack_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
   if (has_no_config) fp_warn("MCU has no config");
 
   if (cmd == GOODIX_CMD_NOP) {
-    fp_warn("Received nop ack, device might be in application production mode");
+    fp_warn("Received nop ack");
     return;
   }
 
   if (priv->cmd != cmd) {
-    fp_warn("Invalid ack command: 0x%02x != expected: (0x%02x)", cmd,
-            priv->cmd);
+    fp_warn("Invalid ack command: 0x%02x", cmd);
     return;
   }
 
@@ -120,8 +119,7 @@ void goodix_protocol_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
     // TODO implement reassembling for messages protocol beacause some devices
     // don't use messages packets.
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message protocol length: %d < expected (%d)",
-                payload_ptr_len, payload_len);
+                "Invalid message protocol length: %d", payload_ptr_len);
     goto free;
   }
 
@@ -131,8 +129,7 @@ void goodix_protocol_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
   }
 
   if (priv->cmd != cmd) {
-    fp_warn("Invalid protocol command: 0x%02x != expected (0x%02x)", cmd,
-            priv->cmd);
+    fp_warn("Invalid protocol command: 0x%02x", cmd);
     goto free;
   }
 
@@ -144,15 +141,31 @@ void goodix_protocol_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
   switch (cmd) {
     case GOODIX_CMD_FIRMWARE_VERSION:
       // Some device send to firmware without the null terminator
-      payload = g_realloc(payload, payload_ptr_len + 1);
-      *(payload + payload_ptr_len) = 0;
+      payload = g_realloc(payload, payload_ptr_len + sizeof(guint8));
+      *(payload + payload_ptr_len) = 0x00;
+
       if (strcmp((gchar *)payload, class->firmware_version)) {
         g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                    "Invalid device firmware. \"%s\" != expected (\"%s\")",
-                    payload, class->firmware_version);
+                    "Invalid device firmware: \"%s\"", payload);
         goto free;
       }
-      fp_dbg("Valid device firmware: %s", payload);
+
+      fp_dbg("Device firmware: \"%s\"", payload);
+
+      goto done;
+
+    case GOODIX_CMD_PRESET_PSK_READ_R:
+
+      if (payload_ptr_len < 9) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                            "Failed to read PMK hash");
+        goto free;
+      }
+
+      g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                          "Failed to read PMK hash");
+      goto free;
+
       goto done;
 
     default:
@@ -204,7 +217,7 @@ void goodix_pack_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
       goto clear;
 
     default:
-      fp_warn("Invalid message pack flags: 0x%02x", flags);
+      fp_warn("Unknown flags: 0x%02x", flags);
       goto clear;
   }
 
@@ -279,7 +292,7 @@ void goodix_send_protocol(FpiSsm *ssm, guint8 cmd, gboolean calc_checksum,
   priv->reply = reply;
   priv->cmd = cmd;
 
-  fp_dbg("Running command 0x%02x", cmd);
+  fp_dbg("Running command: 0x%02x", cmd);
 
   data_len = goodix_encode_protocol(&data, FALSE, cmd, calc_checksum, payload,
                                     payload_len, payload_destroy);
@@ -290,7 +303,7 @@ void goodix_send_protocol(FpiSsm *ssm, guint8 cmd, gboolean calc_checksum,
 void goodix_cmd_nop(FpiSsm *ssm) {
   struct _payload {
     guint32 unknown;
-  } __attribute__((__packed__)) payload = {.unknown = 0};
+  } __attribute__((__packed__)) payload = {.unknown = 0x00000000};
 
   goodix_send_protocol(ssm, GOODIX_CMD_NOP, FALSE, FALSE, (guint8 *)&payload,
                        sizeof(payload), NULL);

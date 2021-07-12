@@ -41,24 +41,14 @@ static unsigned int tls_server_psk_server_callback(SSL *ssl,
                                                    const char *identity,
                                                    unsigned char *psk,
                                                    unsigned int max_psk_len) {
-  long key_len = 0;
-  unsigned char *key;
-
-  key = OPENSSL_hexstr2buf(psk_key, &key_len);
-  if (key == NULL) {
-    fp_dbg("OpenSSL cannot convert provided PSK");
-    return 0;
-  }
-  if (key_len > (int)max_psk_len) {
+  if (sizeof(pmk_hash) > max_psk_len) {
     fp_dbg("Provided PSK is too long for OpenSSL");
-    OPENSSL_free(key);
     return 0;
   }
 
-  memcpy(psk, key, key_len);
-  OPENSSL_free(key);
+  psk = (unsigned char *)&pmk_hash;
 
-  return key_len;
+  return sizeof(pmk_hash);
 }
 
 int tls_server_create_socket(int port) {

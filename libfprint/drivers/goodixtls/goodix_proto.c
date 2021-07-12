@@ -65,9 +65,9 @@ gsize goodix_encode_protocol(guint8 **data, gboolean pad_data, guint8 cmd,
   struct _protocol {
     guint8 cmd;
     guint16 length;
-  } __attribute__((__packed__))
-  protocol = {.cmd = cmd, .length = GUINT16_TO_LE(payload_len) + 1};
-  gsize data_ptr_len = sizeof(protocol) + payload_len + 1;
+  } __attribute__((__packed__)) protocol = {
+      .cmd = cmd, .length = GUINT16_TO_LE(payload_len) + sizeof(guint8)};
+  gsize data_ptr_len = sizeof(protocol) + payload_len + sizeof(guint8);
 
   if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
     data_ptr_len +=
@@ -94,15 +94,14 @@ guint16 goodix_decode_pack(guint8 *flags, guint8 **payload,
   struct _pack {
     guint8 flags;
     guint16 length;
-    guint8 checksum;
+    guint8 checksum;  // TODO Remove checksum from pack
   } __attribute__((__packed__)) pack;
   guint8 checksum;
   guint16 payload_ptr_len = data_len - sizeof(pack);
 
   if (data_len < sizeof(pack)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message pack length: %ld < expected (%ld)", data_len,
-                sizeof(pack));
+                "Invalid message pack length: %ld", data_len);
     return 0;
   }
 
@@ -111,11 +110,10 @@ guint16 goodix_decode_pack(guint8 *flags, guint8 **payload,
 
   if (payload_ptr_len >= pack.length) payload_ptr_len = pack.length;
 
-  checksum = goodix_calc_checksum(data, sizeof(pack) - 1);
+  checksum = goodix_calc_checksum(data, sizeof(pack) - sizeof(guint8));
   if (checksum != pack.checksum) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message pack checksum: 0x%02x != expected (0x%02x)",
-                checksum, pack.checksum);
+                "Invalid message pack checksum: 0x%02x", checksum);
     return 0;
   }
 
@@ -137,17 +135,17 @@ guint16 goodix_decode_protocol(guint8 *cmd, guint8 **payload,
     guint16 length;
   } __attribute__((__packed__)) protocol;
   guint8 checksum;
-  guint16 payload_ptr_len = data_len - sizeof(protocol) - 1;
+  guint16 payload_ptr_len = data_len - sizeof(protocol) - sizeof(guint8);
 
-  if (data_len - 1 < sizeof(protocol)) {
+  if (data_len - sizeof(guint8) < sizeof(protocol)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message protocol length: %ld < expected (%ld)",
-                data_len - 1, sizeof(protocol));
+                "Invalid message protocol length: %ld",
+                data_len - sizeof(guint8));
     return 0;
   }
 
   memcpy(&protocol, data, sizeof(protocol));
-  protocol.length = GUINT16_FROM_LE(protocol.length) - 1;
+  protocol.length = GUINT16_FROM_LE(protocol.length) - sizeof(guint8);
 
   if (payload_ptr_len >= protocol.length) {
     payload_ptr_len = protocol.length;
@@ -156,17 +154,13 @@ guint16 goodix_decode_protocol(guint8 *cmd, guint8 **payload,
       checksum =
           0xaa - goodix_calc_checksum(data, sizeof(protocol) + protocol.length);
       if (checksum != *(data + sizeof(protocol) + protocol.length)) {
-        g_set_error(
-            error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-            "Invalid message protocol checksum: 0x%02x != expected (0x%02x)",
-            checksum, *(data + sizeof(protocol) + protocol.length));
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                    "Invalid message protocol checksum: 0x%02x", checksum);
         return 0;
       }
     } else if (0x88 != *(data + sizeof(protocol) + protocol.length)) {
-      g_set_error(
-          error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-          "Invalid message protocol checksum: 0x88 != expected (0x%02x)",
-          *(data + sizeof(protocol) + protocol.length));
+      g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                          "Invalid message protocol checksum: 0x88");
       return 0;
     }
   }
@@ -192,8 +186,7 @@ void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, guint8 *data,
 
   if (data_len != sizeof(ack)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid ack length: %d != expected (%ld)", data_len,
-                sizeof(ack));
+                "Invalid ack length: %d", data_len);
     return;
   }
 
@@ -201,8 +194,8 @@ void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, guint8 *data,
   if (data_destroy) data_destroy(data);
 
   if (!ack.always_true) {
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid ack flags: FALSE != expected (TRUE)");
+    g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                        "Invalid ack flags");
     return;
   }
 
