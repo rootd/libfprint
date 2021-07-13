@@ -36,14 +36,24 @@ struct _FpiDeviceGoodixTlsClass {
 
   const gchar *firmware_version;
   const guint8 *pmk_hash;
-  gsize pmk_hash_len;
+  guint32 pmk_hash_len;
 };
+
+gchar *data_to_string(guint8 *data, gsize data_len);
 
 // ---- GOODIX SECTION START ----
 
 void goodix_receive_data(FpiSsm *ssm);
 
 void goodix_cmd_done(FpiSsm *ssm, guint8 cmd);
+
+void goodix_firmware_version_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
+                                    GDestroyNotify data_destroy,
+                                    GError **error);
+
+void goodix_preset_psk_read_r_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
+                                     GDestroyNotify data_destroy,
+                                     GError **error);
 
 void goodix_ack_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
                        GDestroyNotify data_destroy, GError **error);

@@ -24,6 +24,7 @@
 #include <gusb.h>
 #include <openssl/ssl.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "drivers_api.h"
@@ -46,6 +47,15 @@ typedef struct {
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(FpiDeviceGoodixTls, fpi_device_goodixtls,
                                     FP_TYPE_IMAGE_DEVICE);
 
+gchar *data_to_string(guint8 *data, gsize data_len) {
+  gchar *string = g_malloc((data_len * 2) + 1);
+
+  for (gsize i = 0; i < data_len; i++)
+    sprintf(string + i * 2, "%02x", *(data + i));
+
+  return string;
+}
+
 // ---- GOODIX SECTION START ----
 
 void goodix_receive_data(FpiSsm *ssm) {
@@ -66,6 +76,95 @@ void goodix_cmd_done(FpiSsm *ssm, guint8 cmd) {
   fp_dbg("Completed command: 0x%02x", cmd);
 
   fpi_ssm_next_state(ssm);
+}
+
+void goodix_firmware_version_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
+                                    GDestroyNotify data_destroy,
+                                    GError **error) {
+  FpDevice *dev = fpi_ssm_get_device(ssm);
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+  FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
+  gchar *payload = g_malloc(data_len + sizeof(guint8));
+
+  memcpy(payload, data, data_len);
+  if (data_destroy) data_destroy(data);
+
+  // Some device send to firmware without the null terminator
+  *(payload + data_len) = 0x00;
+
+  if (strcmp(payload, class->firmware_version)) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device firmware: \"%s\"", payload);
+    goto free;
+  }
+
+  fp_dbg("Device firmware: \"%s\"", payload);
+
+  goodix_cmd_done(ssm, GOODIX_CMD_FIRMWARE_VERSION);
+
+free:
+  g_free(payload);
+}
+
+void goodix_preset_psk_read_r_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
+                                     GDestroyNotify data_destroy,
+                                     GError **error) {
+  FpDevice *dev = fpi_ssm_get_device(ssm);
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+  FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
+  guint32 pmk_length;
+  gchar *pmk = NULL;
+
+  if (data_len < sizeof(guint8) + sizeof(goodix_preset_psk_r)) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid PSK read reply length: %ld", data_len);
+    goto free;
+  }
+
+  if (*data != 0x00) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid PSK read reply flags: 0x%02x", *data);
+    goto free;
+  }
+
+  fp_dbg("PSK address: 0x%08x",
+         GUINT32_FROM_LE(
+             ((goodix_preset_psk_r *)(data + sizeof(guint8)))->address));
+
+  pmk_length =
+      GUINT32_FROM_LE(((goodix_preset_psk_r *)(data + sizeof(guint8)))->length);
+
+  if (pmk_length > data_len - sizeof(guint8) - sizeof(goodix_preset_psk_r)) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid PMK length: %d", pmk_length);
+    goto free;
+  }
+
+  pmk = data_to_string(data + sizeof(guint8) + sizeof(goodix_preset_psk_r),
+                       pmk_length);
+
+  fp_dbg("PMK length: %d", pmk_length);
+
+  if (pmk_length != class->pmk_hash_len) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device PMK hash: 0x%s", pmk);
+    goto free;
+  }
+
+  if (memcmp(data + sizeof(guint8) + sizeof(goodix_preset_psk_r),
+             class->pmk_hash, pmk_length)) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device PMK hash: 0x%s", pmk);
+    goto free;
+  }
+
+  fp_dbg("Device PMK hash: 0x%s", pmk);
+
+  goodix_cmd_done(ssm, GOODIX_CMD_PRESET_PSK_READ_R);
+
+free:
+  if (data_destroy) data_destroy(data);
+  g_free(pmk);
 }
 
 void goodix_ack_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
@@ -100,7 +199,6 @@ void goodix_protocol_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
                             GDestroyNotify data_destroy, GError **error) {
   FpDevice *dev = fpi_ssm_get_device(ssm);
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
   guint8 cmd;
@@ -124,8 +222,8 @@ void goodix_protocol_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
   }
 
   if (cmd == GOODIX_CMD_ACK) {
-    goodix_ack_handle(ssm, payload, payload_ptr_len, NULL, error);
-    goto free;
+    goodix_ack_handle(ssm, payload, payload_ptr_len, g_free, error);
+    return;
   }
 
   if (priv->cmd != cmd) {
@@ -140,33 +238,14 @@ void goodix_protocol_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
 
   switch (cmd) {
     case GOODIX_CMD_FIRMWARE_VERSION:
-      // Some device send to firmware without the null terminator
-      payload = g_realloc(payload, payload_ptr_len + sizeof(guint8));
-      *(payload + payload_ptr_len) = 0x00;
-
-      if (strcmp((gchar *)payload, class->firmware_version)) {
-        g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                    "Invalid device firmware: \"%s\"", payload);
-        goto free;
-      }
-
-      fp_dbg("Device firmware: \"%s\"", payload);
-
-      goto done;
+      goodix_firmware_version_handle(ssm, payload, payload_ptr_len, g_free,
+                                     error);
+      return;
 
     case GOODIX_CMD_PRESET_PSK_READ_R:
-
-      if (payload_ptr_len < 9) {
-        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                            "Failed to read PMK hash");
-        goto free;
-      }
-
-      g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                          "Failed to read PMK hash");
-      goto free;
-
-      goto done;
+      goodix_preset_psk_read_r_handle(ssm, payload, payload_ptr_len, g_free,
+                                      error);
+      return;
 
     default:
       // fp_warn("Unknown command: 0x%02x", cmd);
@@ -174,9 +253,6 @@ void goodix_protocol_handle(FpiSsm *ssm, guint8 *data, gsize data_len,
                   "Unknown command: 0x%02x", cmd);
       goto free;
   }
-
-done:
-  goodix_cmd_done(ssm, cmd);
 
 free:
   g_free(payload);
@@ -301,9 +377,7 @@ void goodix_send_protocol(FpiSsm *ssm, guint8 cmd, gboolean calc_checksum,
 }
 
 void goodix_cmd_nop(FpiSsm *ssm) {
-  struct _payload {
-    guint32 unknown;
-  } __attribute__((__packed__)) payload = {.unknown = 0x00000000};
+  goodix_nop payload = {.unknown = 0x00000000};
 
   goodix_send_protocol(ssm, GOODIX_CMD_NOP, FALSE, FALSE, (guint8 *)&payload,
                        sizeof(payload), NULL);
@@ -312,10 +386,7 @@ void goodix_cmd_nop(FpiSsm *ssm) {
 }
 
 void goodix_cmd_mcu_get_image(FpiSsm *ssm) {
-  struct _payload {
-    guint8 unused_flags;
-    guint8 : 8;
-  } __attribute__((__packed__)) payload = {.unused_flags = 0x01};
+  goodix_default payload = {.unused_flags = 0x01};
 
   goodix_send_protocol(ssm, GOODIX_CMD_MCU_GET_IMAGE, TRUE, FALSE,
                        (guint8 *)&payload, sizeof(payload), NULL);
@@ -343,20 +414,14 @@ void goodix_cmd_mcu_switch_to_fdt_mode(FpiSsm *ssm, guint8 *mode,
 }
 
 void goodix_cmd_nav_0(FpiSsm *ssm) {
-  struct _payload {
-    guint8 unused_flags;
-    guint8 : 8;
-  } __attribute__((__packed__)) payload = {.unused_flags = 0x01};
+  goodix_default payload = {.unused_flags = 0x01};
 
   goodix_send_protocol(ssm, GOODIX_CMD_NAV_0, TRUE, TRUE, (guint8 *)&payload,
                        sizeof(payload), NULL);
 }
 
 void goodix_cmd_mcu_switch_to_idle_mode(FpiSsm *ssm, guint8 sleep_time) {
-  struct _payload {
-    guint8 sleep_time;
-    guint8 : 8;
-  } __attribute__((__packed__)) payload = {.sleep_time = sleep_time};
+  goodix_mcu_switch_to_idle_mode payload = {.sleep_time = sleep_time};
 
   goodix_send_protocol(ssm, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE, TRUE, FALSE,
                        (guint8 *)&payload, sizeof(payload), NULL);
@@ -366,13 +431,9 @@ void goodix_cmd_write_sensor_register(FpiSsm *ssm, guint16 address,
                                       guint16 value) {
   // Only support one address and one value
 
-  struct _payload {
-    guint8 multiples;
-    guint16 address;
-    guint16 value;
-  } __attribute__((__packed__)) payload = {.multiples = FALSE,
-                                           .address = GUINT16_TO_LE(address),
-                                           .value = GUINT16_TO_LE(value)};
+  goodix_write_sensor_register payload = {.multiples = FALSE,
+                                          .address = GUINT16_TO_LE(address),
+                                          .value = GUINT16_TO_LE(value)};
 
   goodix_send_protocol(ssm, GOODIX_CMD_WRITE_SENSOR_REGISTER, TRUE, FALSE,
                        (guint8 *)&payload, sizeof(payload), NULL);
@@ -382,12 +443,7 @@ void goodix_cmd_read_sensor_register(FpiSsm *ssm, guint16 address,
                                      guint8 length) {
   // Only support one address
 
-  struct _payload {
-    guint8 multiples;
-    guint16 address;
-    guint8 length;
-    guint8 : 8;
-  } __attribute__((__packed__)) payload = {
+  goodix_read_sensor_register payload = {
       .multiples = FALSE, .address = GUINT16_TO_LE(address), .length = length};
 
   goodix_send_protocol(ssm, GOODIX_CMD_READ_SENSOR_REGISTER, TRUE, TRUE,
@@ -403,9 +459,7 @@ void goodix_cmd_upload_config_mcu(FpiSsm *ssm, guint8 *config,
 
 void goodix_cmd_set_powerdown_scan_frequency(FpiSsm *ssm,
                                              guint16 powerdown_scan_frequency) {
-  struct _payload {
-    guint16 powerdown_scan_frequency;
-  } __attribute__((__packed__)) payload = {
+  goodix_set_powerdown_scan_frequency payload = {
       .powerdown_scan_frequency = GUINT16_TO_LE(powerdown_scan_frequency)};
 
   goodix_send_protocol(ssm, GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY, TRUE, TRUE,
@@ -413,10 +467,7 @@ void goodix_cmd_set_powerdown_scan_frequency(FpiSsm *ssm,
 }
 
 void goodix_cmd_enable_chip(FpiSsm *ssm, gboolean enable) {
-  struct _payload {
-    guint8 enable;
-    guint8 : 8;
-  } __attribute__((__packed__)) payload = {.enable = enable ? TRUE : FALSE};
+  goodix_enable_chip payload = {.enable = enable ? TRUE : FALSE};
 
   goodix_send_protocol(ssm, GOODIX_CMD_ENABLE_CHIP, TRUE, FALSE,
                        (guint8 *)&payload, sizeof(payload), NULL);
@@ -424,15 +475,9 @@ void goodix_cmd_enable_chip(FpiSsm *ssm, gboolean enable) {
 
 void goodix_cmd_reset(FpiSsm *ssm, gboolean reset_sensor,
                       gboolean soft_reset_mcu, guint8 sleep_time) {
-  struct _payload {
-    guint8 reset_sensor : 1;
-    guint8 soft_reset_mcu : 1;
-    guint8 : 6;
-    guint8 sleep_time;
-  } __attribute__((__packed__))
-  payload = {.soft_reset_mcu = soft_reset_mcu ? TRUE : FALSE,
-             .reset_sensor = reset_sensor ? TRUE : FALSE,
-             .sleep_time = sleep_time};
+  goodix_reset payload = {.soft_reset_mcu = soft_reset_mcu ? TRUE : FALSE,
+                          .reset_sensor = reset_sensor ? TRUE : FALSE,
+                          .sleep_time = sleep_time};
 
   goodix_send_protocol(ssm, GOODIX_CMD_RESET, TRUE,
                        soft_reset_mcu ? FALSE : TRUE, (guint8 *)&payload,
@@ -440,36 +485,28 @@ void goodix_cmd_reset(FpiSsm *ssm, gboolean reset_sensor,
 }
 
 void goodix_cmd_firmware_version(FpiSsm *ssm) {
-  struct _payload {
-    guint16 : 16;
-  } __attribute__((__packed__)) payload = {};
+  goodix_none payload = {};
 
   goodix_send_protocol(ssm, GOODIX_CMD_FIRMWARE_VERSION, TRUE, TRUE,
                        (guint8 *)&payload, sizeof(payload), NULL);
 }
 
 void goodix_cmd_query_mcu_state(FpiSsm *ssm) {
-  struct _payload {
-    guint8 unused_flags;
-  } __attribute__((__packed__)) payload = {.unused_flags = 0x55};
+  goodix_query_mcu_state payload = {.unused_flags = 0x55};
 
   goodix_send_protocol(ssm, GOODIX_CMD_QUERY_MCU_STATE, TRUE, TRUE,
                        (guint8 *)&payload, sizeof(payload), NULL);
 }
 
 void goodix_cmd_request_tls_connection(FpiSsm *ssm) {
-  struct _payload {
-    guint16 : 16;
-  } __attribute__((__packed__)) payload = {};
+  goodix_none payload = {};
 
   goodix_send_protocol(ssm, GOODIX_CMD_REQUEST_TLS_CONNECTION, TRUE, FALSE,
                        (guint8 *)&payload, sizeof(payload), NULL);
 }
 
 void goodix_cmd_tls_successfully_established(FpiSsm *ssm) {
-  struct _payload {
-    guint16 : 16;
-  } __attribute__((__packed__)) payload = {};
+  goodix_none payload = {};
 
   goodix_send_protocol(ssm, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED, TRUE,
                        FALSE, (guint8 *)&payload, sizeof(payload), NULL);
@@ -480,28 +517,21 @@ void goodix_cmd_preset_psk_write_r(FpiSsm *ssm, guint32 address, guint8 *psk,
                                    GDestroyNotify psk_destroy) {
   // Only support one address, one payload and one length
 
-  struct _payload {
-    guint32 address;
-    guint32 length;
-  } __attribute__((__packed__)) payload = {.address = GUINT32_TO_LE(address),
-                                           .length = GUINT32_TO_LE(psk_len)};
-  guint8 *payload_ptr = g_malloc(sizeof(payload) + psk_len);
+  guint8 *payload = g_malloc(sizeof(payload) + psk_len);
 
-  memcpy(payload_ptr, &payload, sizeof(payload));
-  memcpy(payload_ptr + sizeof(payload), psk, psk_len);
+  ((goodix_preset_psk_r *)payload)->address = GUINT32_TO_LE(address);
+  ((goodix_preset_psk_r *)payload)->length = GUINT32_TO_LE(psk_len);
+  memcpy(payload + sizeof(payload), psk, psk_len);
   if (psk_destroy) psk_destroy(psk);
 
-  goodix_send_protocol(ssm, GOODIX_CMD_PRESET_PSK_WRITE_R, TRUE, TRUE,
-                       payload_ptr, sizeof(payload) + psk_len, g_free);
+  goodix_send_protocol(ssm, GOODIX_CMD_PRESET_PSK_WRITE_R, TRUE, TRUE, payload,
+                       sizeof(payload) + psk_len, g_free);
 }
 
 void goodix_cmd_preset_psk_read_r(FpiSsm *ssm, guint32 address,
                                   guint32 length) {
-  struct _payload {
-    guint32 address;
-    guint32 length;
-  } __attribute__((__packed__)) payload = {.address = GUINT32_TO_LE(address),
-                                           .length = GUINT32_TO_LE(length)};
+  goodix_preset_psk_r payload = {.address = GUINT32_TO_LE(address),
+                                 .length = GUINT32_TO_LE(length)};
 
   goodix_send_protocol(ssm, GOODIX_CMD_PRESET_PSK_READ_R, TRUE, TRUE,
                        (guint8 *)&payload, sizeof(payload), NULL);

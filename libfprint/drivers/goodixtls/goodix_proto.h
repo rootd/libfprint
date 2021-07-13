@@ -47,6 +47,80 @@
 #define GOODIX_CMD_PRESET_PSK_WRITE_R (0xe0)
 #define GOODIX_CMD_PRESET_PSK_READ_R (0xe4)
 
+typedef struct __attribute__((__packed__)) _goodix_pack {
+  guint8 flags;
+  guint16 length;
+} goodix_pack;
+
+typedef struct __attribute__((__packed__)) _goodix_protocol {
+  guint8 cmd;
+  guint16 length;
+} goodix_protocol;
+
+typedef struct __attribute__((__packed__)) _goodix_ack {
+  guint8 cmd;
+  guint8 always_true : 1;
+  guint8 has_no_config : 1;
+  guint8 : 6;
+} goodix_ack;
+
+typedef struct __attribute__((__packed__)) _goodix_nop {
+  guint32 unknown;
+} goodix_nop;
+
+typedef struct __attribute__((__packed__)) _goodix_mcu_switch_to_idle_mode {
+  guint8 sleep_time;
+  guint8 : 8;
+} goodix_mcu_switch_to_idle_mode;
+
+typedef struct __attribute__((__packed__)) _goodix_write_sensor_register {
+  guint8 multiples;
+  guint16 address;
+  guint16 value;
+} goodix_write_sensor_register;
+
+typedef struct __attribute__((__packed__)) _goodix_read_sensor_register {
+  guint8 multiples;
+  guint16 address;
+  guint8 length;
+  guint8 : 8;
+} goodix_read_sensor_register;
+
+typedef struct __attribute__((__packed__))
+_goodix_set_powerdown_scan_frequency {
+  guint16 powerdown_scan_frequency;
+} goodix_set_powerdown_scan_frequency;
+
+typedef struct __attribute__((__packed__)) _goodix_enable_chip {
+  guint8 enable;
+  guint8 : 8;
+} goodix_enable_chip;
+
+typedef struct __attribute__((__packed__)) _goodix_reset {
+  guint8 reset_sensor : 1;
+  guint8 soft_reset_mcu : 1;
+  guint8 : 6;
+  guint8 sleep_time;
+} goodix_reset;
+
+typedef struct __attribute__((__packed__)) _goodix_query_mcu_state {
+  guint8 unused_flags;
+} goodix_query_mcu_state;
+
+typedef struct __attribute__((__packed__)) _goodix_preset_psk_r {
+  guint32 address;
+  guint32 length;
+} goodix_preset_psk_r;
+
+typedef struct __attribute__((__packed__)) _goodix_default {
+  guint8 unused_flags;
+  guint8 : 8;
+} goodix_default;
+
+typedef struct __attribute__((__packed__)) _goodix_none {
+  guint16 : 16;
+} goodix_none;
+
 guint8 goodix_calc_checksum(guint8 *data, guint16 data_len);
 
 gsize goodix_encode_pack(guint8 **data, gboolean pad_data, guint8 flags,
