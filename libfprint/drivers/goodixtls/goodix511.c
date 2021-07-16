@@ -20,6 +20,7 @@
 #define FP_COMPONENT "goodixtls511"
 
 #include <glib.h>
+#include <string.h>
 
 #include "drivers_api.h"
 #include "goodix.h"
@@ -44,11 +45,49 @@ enum activate_states {
   ACTIVATE_NOP,
   ACTIVATE_CHECK_FW_VER,
   ACTIVATE_CHECK_PSK,
+  ACTIVATE_RESET,
   ACTIVATE_SET_MCU_IDLE,
   ACTIVATE_SET_MCU_CONFIG,
   ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY,
   ACTIVATE_NUM_STATES,
 };
+
+static gboolean check_firmware(gchar *firmware, GError **error,
+                               gpointer user_data) {
+  if (strcmp(firmware, FIRMWARE_VERSION)) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device firmware: \"%s\"", firmware);
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+static gboolean check_pmk(guint8 *pmk, guint16 pmk_len, GError **error,
+                          gpointer user_data) {
+  gchar *pmk_str;
+  if (pmk_len != sizeof(pmk_hash)) {
+    pmk_str = data_to_string(pmk, pmk_len);
+
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device PMK hash: 0x%s", pmk_str);
+    g_free(pmk_str);
+
+    return TRUE;
+  }
+
+  if (memcmp(pmk, pmk_hash, sizeof(pmk_hash))) {
+    pmk_str = data_to_string(pmk, pmk_len);
+
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device PMK hash: 0x%s", pmk);
+    g_free(pmk_str);
+
+    return TRUE;
+  }
+
+  return FALSE;
+}
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
   switch (fpi_ssm_get_cur_state(ssm)) {
@@ -56,34 +95,40 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       // Nop seems to clear the previous command buffer. But we are unable to do
       // so.
       goodix_receive_data(ssm);
-      // DON'T ADD A BREAK HERE!
-    case ACTIVATE_NOP:
-      goodix_cmd_nop(ssm);
+      goodix_send_nop(ssm);
       break;
 
     case ACTIVATE_ENABLE_CHIP:
-      goodix_cmd_enable_chip(ssm, TRUE);
+      goodix_send_enable_chip(ssm, TRUE);
+      break;
+
+    case ACTIVATE_NOP:
+      goodix_send_nop(ssm);
       break;
 
     case ACTIVATE_CHECK_FW_VER:
-      goodix_cmd_firmware_version(ssm);
+      goodix_send_firmware_version(ssm, check_firmware, NULL);
       break;
 
     case ACTIVATE_CHECK_PSK:
-      goodix_cmd_preset_psk_read_r(ssm, PMK_HASH_ADDRESS, 0);
+      goodix_send_preset_psk_read_r(ssm, PMK_HASH_ADDRESS, 0, check_pmk, NULL);
+      break;
+
+    case ACTIVATE_RESET:
+      goodix_send_reset(ssm, TRUE, 20, NULL, NULL);
       break;
 
     case ACTIVATE_SET_MCU_IDLE:
-      goodix_cmd_mcu_switch_to_idle_mode(ssm, 20);
+      goodix_send_mcu_switch_to_idle_mode(ssm, 20);
       break;
 
     case ACTIVATE_SET_MCU_CONFIG:
-      goodix_cmd_upload_config_mcu(ssm, device_config, sizeof(device_config),
-                                   NULL);
+      goodix_send_upload_config_mcu(ssm, device_config, sizeof(device_config),
+                                    NULL, NULL, NULL);
       break;
 
     case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY:
-      goodix_cmd_set_powerdown_scan_frequency(ssm, 100);
+      goodix_send_set_powerdown_scan_frequency(ssm, 100, NULL, NULL);
       break;
   }
 }
@@ -153,9 +198,6 @@ static void fpi_device_goodixtls511_class_init(
   gx_class->interface = GOODIX_INTERFACE;
   gx_class->ep_in = GOODIX_EP_IN;
   gx_class->ep_out = GOODIX_EP_OUT;
-  gx_class->firmware_version = FIRMWARE_VERSION;
-  gx_class->pmk_hash = pmk_hash;
-  gx_class->pmk_hash_len = sizeof(pmk_hash);
 
   dev_class->id = "goodixtls511";
   dev_class->full_name = "Goodix TLS Fingerprint Sensor 511";
