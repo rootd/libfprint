@@ -43,27 +43,29 @@ typedef gboolean (*GoodixPresetPskReadRCallback)(guint8 *pmk, guint16 pmk_len,
                                                  GError **error,
                                                  gpointer user_data);
 
-gchar *data_to_string(guint8 *data, gsize data_len);
+gchar *data_to_string(guint8 *data, guint32 data_len);
 
 // ---- GOODIX RECEIVE SECTION START ----
 
 void goodix_receive_done(FpiSsm *ssm, guint8 cmd);
 
-void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data,
+                                      guint16 data_len,
                                       GDestroyNotify data_destroy,
                                       GError **error);
 
-void goodix_receive_ack(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_ack(FpiSsm *ssm, guint8 *data, guint16 data_len,
                         GDestroyNotify data_destroy, GError **error);
 
-void goodix_receive_firmware_version(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_firmware_version(FpiSsm *ssm, guint8 *data,
+                                     guint16 data_len,
                                      GDestroyNotify data_destroy,
                                      GError **error);
 
-void goodix_receive_protocol(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_protocol(FpiSsm *ssm, guint8 *data, guint32 data_len,
                              GDestroyNotify data_destroy, GError **error);
 
-void goodix_receive_pack(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_pack(FpiSsm *ssm, guint8 *data, guint32 data_len,
                          GDestroyNotify data_destroy, GError **error);
 
 void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,

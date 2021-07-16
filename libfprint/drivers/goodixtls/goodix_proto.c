@@ -33,7 +33,7 @@ guint8 goodix_calc_checksum(guint8 *data, guint16 data_len) {
 guint32 goodix_encode_pack(guint8 flags, guint8 *payload, guint16 payload_len,
                            GDestroyNotify payload_destroy, gboolean pad_data,
                            guint8 **data) {
-  gsize data_ptr_len = sizeof(GoodixPack) + sizeof(guint8) + payload_len;
+  guint32 data_ptr_len = sizeof(GoodixPack) + sizeof(guint8) + payload_len;
 
   if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
     data_ptr_len +=
@@ -56,7 +56,7 @@ guint32 goodix_encode_protocol(guint8 cmd, guint8 *payload, guint16 payload_len,
                                GDestroyNotify payload_destroy,
                                gboolean calc_checksum, gboolean pad_data,
                                guint8 **data) {
-  gsize data_ptr_len = sizeof(GoodixProtocol) + payload_len + sizeof(guint8);
+  guint32 data_ptr_len = sizeof(GoodixProtocol) + payload_len + sizeof(guint8);
 
   if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
     data_ptr_len +=

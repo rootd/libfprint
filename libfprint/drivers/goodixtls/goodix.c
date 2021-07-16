@@ -48,10 +48,10 @@ typedef struct {
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(FpiDeviceGoodixTls, fpi_device_goodixtls,
                                     FP_TYPE_IMAGE_DEVICE);
 
-gchar *data_to_string(guint8 *data, gsize data_len) {
+gchar *data_to_string(guint8 *data, guint32 data_len) {
   gchar *string = g_malloc((data_len * 2) + 1);
 
-  for (gsize i = 0; i < data_len; i++)
+  for (guint32 i = 0; i < data_len; i++)
     sprintf(string + i * 2, "%02x", *(data + i));
 
   return string;
@@ -65,7 +65,8 @@ void goodix_receive_done(FpiSsm *ssm, guint8 cmd) {
   fpi_ssm_next_state(ssm);
 }
 
-void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data,
+                                      guint16 data_len,
                                       GDestroyNotify data_destroy,
                                       GError **error) {
   FpDevice *dev = fpi_ssm_get_device(ssm);
@@ -77,7 +78,7 @@ void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
 
   if (data_len < sizeof(guint8) + sizeof(GoodixPresetPskR)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid PSK read reply length: %ld", data_len);
+                "Invalid PSK read reply length: %d", data_len);
     goto free;
   }
 
@@ -121,7 +122,7 @@ free:
   if (data_destroy) data_destroy(data);
 }
 
-void goodix_receive_ack(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_ack(FpiSsm *ssm, guint8 *data, guint16 data_len,
                         GDestroyNotify data_destroy, GError **error) {
   FpDevice *dev = fpi_ssm_get_device(ssm);
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
@@ -149,7 +150,8 @@ void goodix_receive_ack(FpiSsm *ssm, guint8 *data, gsize data_len,
   if (!priv->callback) goodix_receive_done(ssm, cmd);
 }
 
-void goodix_receive_firmware_version(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_firmware_version(FpiSsm *ssm, guint8 *data,
+                                     guint16 data_len,
                                      GDestroyNotify data_destroy,
                                      GError **error) {
   FpDevice *dev = fpi_ssm_get_device(ssm);
@@ -177,7 +179,7 @@ free:
   g_free(payload);
 }
 
-void goodix_receive_protocol(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_protocol(FpiSsm *ssm, guint8 *data, guint32 data_len,
                              GDestroyNotify data_destroy, GError **error) {
   FpDevice *dev = fpi_ssm_get_device(ssm);
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
@@ -240,7 +242,7 @@ free:
   g_free(payload);
 }
 
-void goodix_receive_pack(FpiSsm *ssm, guint8 *data, gsize data_len,
+void goodix_receive_pack(FpiSsm *ssm, guint8 *data, guint32 data_len,
                          GDestroyNotify data_destroy, GError **error) {
   FpDevice *dev = fpi_ssm_get_device(ssm);
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
