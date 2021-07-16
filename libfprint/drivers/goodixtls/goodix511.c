@@ -54,7 +54,7 @@ enum activate_states {
 
 static gboolean check_firmware(gchar *firmware, GError **error,
                                gpointer user_data) {
-  if (strcmp(firmware, FIRMWARE_VERSION)) {
+  if (strcmp(firmware, GOODIX_511_FIRMWARE_VERSION)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                 "Invalid device firmware: \"%s\"", firmware);
     return TRUE;
@@ -66,7 +66,14 @@ static gboolean check_firmware(gchar *firmware, GError **error,
 static gboolean check_psk_r(guint32 address, guint8 *psk_r, guint16 psk_r_len,
                             GError **error, gpointer user_data) {
   gchar *psk_r_str;
-  if (psk_r_len != sizeof(psk_r_0)) {
+  if (address != GOODIX_511_PSK_R_ADDRESS) {
+    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device PSK R address: 0x%08x", address);
+
+    return TRUE;
+  }
+
+  if (psk_r_len != sizeof(goodix_511_psk_r_0)) {
     psk_r_str = data_to_str(psk_r, psk_r_len);
 
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
@@ -76,7 +83,7 @@ static gboolean check_psk_r(guint32 address, guint8 *psk_r, guint16 psk_r_len,
     return TRUE;
   }
 
-  if (memcmp(psk_r, psk_r_0, sizeof(psk_r_0))) {
+  if (memcmp(psk_r, goodix_511_psk_r_0, sizeof(goodix_511_psk_r_0))) {
     psk_r_str = data_to_str(psk_r, psk_r_len);
 
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
@@ -111,7 +118,8 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       break;
 
     case ACTIVATE_CHECK_PSK:
-      goodix_send_preset_psk_read_r(ssm, PSK_R_ADDRESS, 0, check_psk_r, NULL);
+      goodix_send_preset_psk_read_r(ssm, GOODIX_511_PSK_R_ADDRESS, 0,
+                                    check_psk_r, NULL);
       break;
 
     case ACTIVATE_RESET:
@@ -123,8 +131,8 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       break;
 
     case ACTIVATE_SET_MCU_CONFIG:
-      goodix_send_upload_config_mcu(ssm, device_config, sizeof(device_config),
-                                    NULL, NULL, NULL);
+      goodix_send_upload_config_mcu(
+          ssm, goodix_511_config, sizeof(goodix_511_config), NULL, NULL, NULL);
       break;
 
     case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY:
@@ -195,9 +203,9 @@ static void fpi_device_goodixtls511_class_init(
   FpDeviceClass *dev_class = FP_DEVICE_CLASS(class);
   FpImageDeviceClass *img_dev_class = FP_IMAGE_DEVICE_CLASS(class);
 
-  gx_class->interface = GOODIX_INTERFACE;
-  gx_class->ep_in = GOODIX_EP_IN;
-  gx_class->ep_out = GOODIX_EP_OUT;
+  gx_class->interface = GOODIX_511_INTERFACE;
+  gx_class->ep_in = GOODIX_511_EP_IN;
+  gx_class->ep_out = GOODIX_511_EP_OUT;
 
   dev_class->id = "goodixtls511";
   dev_class->full_name = "Goodix TLS Fingerprint Sensor 511";

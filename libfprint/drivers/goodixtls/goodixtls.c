@@ -41,14 +41,14 @@ static unsigned int tls_server_psk_server_callback(SSL *ssl,
                                                    const char *identity,
                                                    unsigned char *psk_r,
                                                    unsigned int max_psk_r_len) {
-  if (sizeof(psk_r_0) > max_psk_r_len) {
+  if (sizeof(goodix_511_psk_r_0) > max_psk_r_len) {
     fp_dbg("Provided PSK R is too long for OpenSSL");
     return 0;
   }
 
-  psk_r = (unsigned char *)&psk_r_0;
+  psk_r = (unsigned char *)&goodix_511_psk_r_0;
 
-  return sizeof(psk_r_0);
+  return sizeof(goodix_511_psk_r_0);
 }
 
 int tls_server_create_socket(int port) {
