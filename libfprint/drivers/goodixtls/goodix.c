@@ -48,7 +48,7 @@ typedef struct {
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(FpiDeviceGoodixTls, fpi_device_goodixtls,
                                     FP_TYPE_IMAGE_DEVICE);
 
-gchar *data_to_string(guint8 *data, guint32 data_len) {
+gchar *data_to_str(guint8 *data, guint32 data_len) {
   gchar *string = g_malloc((data_len * 2) + 1);
 
   for (guint32 i = 0; i < data_len; i++)
@@ -73,47 +73,47 @@ void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data,
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
-  guint32 pmk_len;
-  gchar *pmk = NULL;
+  guint32 psk_r_len, address;
+  gchar *psk_r_str;
 
   if (data_len < sizeof(guint8) + sizeof(GoodixPresetPskR)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid PSK read reply length: %d", data_len);
+                "Invalid preset PSK read R reply length: %d", data_len);
     goto free;
   }
 
   if (*data != 0x00) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid PSK read reply flags: 0x%02x", *data);
+                "Invalid preset PSK read R reply flags: 0x%02x", *data);
     goto free;
   }
 
-  fp_dbg(
-      "PSK address: 0x%08x",
-      GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->address));
+  address =
+      GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->address);
+  fp_dbg("Device PSK R address: 0x%08x", address);
 
-  pmk_len =
+  psk_r_len =
       GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->length);
 
-  if (pmk_len > data_len - sizeof(guint8) - sizeof(GoodixPresetPskR)) {
+  if (psk_r_len > data_len - sizeof(guint8) - sizeof(GoodixPresetPskR)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid PMK length: %d", pmk_len);
+                "Invalid PSK R length: %d", psk_r_len);
     goto free;
   }
 
-  fp_dbg("PMK length: %d", pmk_len);
+  fp_dbg("Device PSK R length: %d", psk_r_len);
 
-  pmk =
-      data_to_string(data + sizeof(guint8) + sizeof(GoodixPresetPskR), pmk_len);
+  psk_r_str =
+      data_to_str(data + sizeof(guint8) + sizeof(GoodixPresetPskR), psk_r_len);
 
-  fp_dbg("Device PMK hash: 0x%s", pmk);
+  fp_dbg("Device PSK R: 0x%s", psk_r_str);
 
-  g_free(pmk);
+  g_free(psk_r_str);
 
   if (priv->callback)
     if (((GoodixPresetPskReadRCallback)priv->callback)(
-            data + sizeof(guint8) + sizeof(GoodixPresetPskR), pmk_len, error,
-            priv->user_data))
+            address, data + sizeof(guint8) + sizeof(GoodixPresetPskR),
+            psk_r_len, error, priv->user_data))
       goto free;
 
   goodix_receive_done(ssm, GOODIX_CMD_PRESET_PSK_READ_R);
@@ -558,24 +558,23 @@ void goodix_send_tls_successfully_established(FpiSsm *ssm) {
                        NULL);
 }
 
-void goodix_send_preset_psk_write_r(FpiSsm *ssm, guint32 address, guint8 *psk,
-                                    guint32 psk_len, GDestroyNotify psk_destroy,
-                                    void (*callback)(guint8 *data,
-                                                     guint16 data_len,
-                                                     gpointer user_data,
-                                                     GError **error),
-                                    gpointer user_data) {
+void goodix_send_preset_psk_write_r(
+    FpiSsm *ssm, guint32 address, guint8 *psk_r, guint32 psk_r_len,
+    GDestroyNotify psk_destroy,
+    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
+                     GError **error),
+    gpointer user_data) {
   // Only support one address, one payload and one length
 
-  guint8 *payload = g_malloc(sizeof(payload) + psk_len);
+  guint8 *payload = g_malloc(sizeof(payload) + psk_r_len);
 
   ((GoodixPresetPskR *)payload)->address = GUINT32_TO_LE(address);
-  ((GoodixPresetPskR *)payload)->length = GUINT32_TO_LE(psk_len);
-  memcpy(payload + sizeof(payload), psk, psk_len);
-  if (psk_destroy) psk_destroy(psk);
+  ((GoodixPresetPskR *)payload)->length = GUINT32_TO_LE(psk_r_len);
+  memcpy(payload + sizeof(payload), psk_r, psk_r_len);
+  if (psk_destroy) psk_destroy(psk_r);
 
   goodix_send_protocol(ssm, GOODIX_CMD_PRESET_PSK_WRITE_R, payload,
-                       sizeof(payload) + psk_len, g_free, TRUE,
+                       sizeof(payload) + psk_r_len, g_free, TRUE,
                        G_CALLBACK(callback), user_data);
 }
 

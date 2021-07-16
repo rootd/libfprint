@@ -39,11 +39,12 @@ typedef gboolean (*GoodixFirmwareVersionCallback)(gchar *firmware,
                                                   GError **error,
                                                   gpointer user_data);
 
-typedef gboolean (*GoodixPresetPskReadRCallback)(guint8 *pmk, guint16 pmk_len,
+typedef gboolean (*GoodixPresetPskReadRCallback)(guint32 address, guint8 *psk_r,
+                                                 guint16 psk_r_len,
                                                  GError **error,
                                                  gpointer user_data);
 
-gchar *data_to_string(guint8 *data, guint32 data_len);
+gchar *data_to_str(guint8 *data, guint32 data_len);
 
 // ---- GOODIX RECEIVE SECTION START ----
 
@@ -160,13 +161,12 @@ void goodix_send_request_tls_connection(FpiSsm *ssm);
 
 void goodix_send_tls_successfully_established(FpiSsm *ssm);
 
-void goodix_send_preset_psk_write_r(FpiSsm *ssm, guint32 address, guint8 *psk,
-                                    guint32 psk_len, GDestroyNotify psk_destroy,
-                                    void (*callback)(guint8 *data,
-                                                     guint16 data_len,
-                                                     gpointer user_data,
-                                                     GError **error),
-                                    gpointer user_data);
+void goodix_send_preset_psk_write_r(
+    FpiSsm *ssm, guint32 address, guint8 *psk_r, guint32 psk_r_len,
+    GDestroyNotify psk_destroy,
+    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
+                     GError **error),
+    gpointer user_data);
 
 void goodix_send_preset_psk_read_r(FpiSsm *ssm, guint32 address, guint32 length,
                                    GoodixPresetPskReadRCallback callback,

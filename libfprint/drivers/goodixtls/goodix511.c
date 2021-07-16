@@ -63,25 +63,25 @@ static gboolean check_firmware(gchar *firmware, GError **error,
   return FALSE;
 }
 
-static gboolean check_pmk(guint8 *pmk, guint16 pmk_len, GError **error,
-                          gpointer user_data) {
-  gchar *pmk_str;
-  if (pmk_len != sizeof(pmk_hash)) {
-    pmk_str = data_to_string(pmk, pmk_len);
+static gboolean check_psk_r(guint32 address, guint8 *psk_r, guint16 psk_r_len,
+                            GError **error, gpointer user_data) {
+  gchar *psk_r_str;
+  if (psk_r_len != sizeof(psk_r_0)) {
+    psk_r_str = data_to_str(psk_r, psk_r_len);
 
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid device PMK hash: 0x%s", pmk_str);
-    g_free(pmk_str);
+                "Invalid device PSK R: 0x%s", psk_r_str);
+    g_free(psk_r_str);
 
     return TRUE;
   }
 
-  if (memcmp(pmk, pmk_hash, sizeof(pmk_hash))) {
-    pmk_str = data_to_string(pmk, pmk_len);
+  if (memcmp(psk_r, psk_r_0, sizeof(psk_r_0))) {
+    psk_r_str = data_to_str(psk_r, psk_r_len);
 
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid device PMK hash: 0x%s", pmk);
-    g_free(pmk_str);
+                "Invalid device PSK R: 0x%s", psk_r);
+    g_free(psk_r_str);
 
     return TRUE;
   }
@@ -111,7 +111,7 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       break;
 
     case ACTIVATE_CHECK_PSK:
-      goodix_send_preset_psk_read_r(ssm, PMK_HASH_ADDRESS, 0, check_pmk, NULL);
+      goodix_send_preset_psk_read_r(ssm, PSK_R_ADDRESS, 0, check_psk_r, NULL);
       break;
 
     case ACTIVATE_RESET:

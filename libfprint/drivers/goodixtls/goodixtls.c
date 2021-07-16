@@ -39,16 +39,16 @@ SSL_CTX *ctx;
 
 static unsigned int tls_server_psk_server_callback(SSL *ssl,
                                                    const char *identity,
-                                                   unsigned char *psk,
-                                                   unsigned int max_psk_len) {
-  if (sizeof(pmk_hash) > max_psk_len) {
-    fp_dbg("Provided PSK is too long for OpenSSL");
+                                                   unsigned char *psk_r,
+                                                   unsigned int max_psk_r_len) {
+  if (sizeof(psk_r_0) > max_psk_r_len) {
+    fp_dbg("Provided PSK R is too long for OpenSSL");
     return 0;
   }
 
-  psk = (unsigned char *)&pmk_hash;
+  psk_r = (unsigned char *)&psk_r_0;
 
-  return sizeof(pmk_hash);
+  return sizeof(psk_r_0);
 }
 
 int tls_server_create_socket(int port) {
