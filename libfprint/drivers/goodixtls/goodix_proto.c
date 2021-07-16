@@ -30,9 +30,9 @@ guint8 goodix_calc_checksum(guint8 *data, guint16 data_len) {
   return checksum;
 }
 
-gsize goodix_encode_pack(guint8 **data, gboolean pad_data, guint8 flags,
-                         guint8 *payload, guint16 payload_len,
-                         GDestroyNotify payload_destroy) {
+guint32 goodix_encode_pack(guint8 flags, guint8 *payload, guint16 payload_len,
+                           GDestroyNotify payload_destroy, gboolean pad_data,
+                           guint8 **data) {
   gsize data_ptr_len = sizeof(GoodixPack) + sizeof(guint8) + payload_len;
 
   if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
@@ -52,10 +52,10 @@ gsize goodix_encode_pack(guint8 **data, gboolean pad_data, guint8 flags,
   return data_ptr_len;
 }
 
-gsize goodix_encode_protocol(guint8 **data, gboolean pad_data, guint8 cmd,
-                             gboolean calc_checksum, guint8 *payload,
-                             guint16 payload_len,
-                             GDestroyNotify payload_destroy) {
+guint32 goodix_encode_protocol(guint8 cmd, guint8 *payload, guint16 payload_len,
+                               GDestroyNotify payload_destroy,
+                               gboolean calc_checksum, gboolean pad_data,
+                               guint8 **data) {
   gsize data_ptr_len = sizeof(GoodixProtocol) + payload_len + sizeof(guint8);
 
   if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
@@ -81,16 +81,17 @@ gsize goodix_encode_protocol(guint8 **data, gboolean pad_data, guint8 cmd,
   return data_ptr_len;
 }
 
-guint16 goodix_decode_pack(guint8 *flags, guint8 **payload,
-                           guint16 *payload_len, guint8 *data, gsize data_len,
-                           GDestroyNotify data_destroy, GError **error) {
+guint16 goodix_decode_pack(guint8 *data, guint32 data_len,
+                           GDestroyNotify data_destroy, guint8 *flags,
+                           guint8 **payload, guint16 *payload_len,
+                           GError **error) {
   guint8 checksum;
   guint16 payload_ptr_len = data_len - sizeof(GoodixPack) - sizeof(guint8);
   guint16 pack_length;
 
   if (data_len < sizeof(GoodixPack) + sizeof(guint8)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message pack length: %ld", data_len);
+                "Invalid message pack length: %d", data_len);
     return 0;
   }
 
@@ -115,17 +116,18 @@ guint16 goodix_decode_pack(guint8 *flags, guint8 **payload,
   return payload_ptr_len;
 }
 
-guint16 goodix_decode_protocol(guint8 *cmd, guint8 **payload,
-                               guint16 *payload_len, gboolean calc_checksum,
-                               guint8 *data, gsize data_len,
-                               GDestroyNotify data_destroy, GError **error) {
+guint16 goodix_decode_protocol(guint8 *data, guint32 data_len,
+                               GDestroyNotify data_destroy,
+                               gboolean calc_checksum, guint8 *cmd,
+                               guint8 **payload, guint16 *payload_len,
+                               GError **error) {
   guint8 checksum;
   guint16 payload_ptr_len = data_len - sizeof(GoodixProtocol) - sizeof(guint8);
   guint16 protocol_length;
 
   if (data_len < sizeof(GoodixProtocol) + sizeof(guint8)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message protocol length: %ld", data_len);
+                "Invalid message protocol length: %d", data_len);
     return 0;
   }
 
@@ -159,9 +161,9 @@ guint16 goodix_decode_protocol(guint8 *cmd, guint8 **payload,
   return payload_ptr_len;
 }
 
-void goodix_decode_ack(guint8 *cmd, gboolean *has_no_config, guint8 *data,
-                       guint16 data_len, GDestroyNotify data_destroy,
-                       GError **error) {
+void goodix_decode_ack(guint8 *data, guint16 data_len,
+                       GDestroyNotify data_destroy, guint8 *cmd,
+                       gboolean *has_no_config, GError **error) {
   if (data_len != sizeof(GoodixAck)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                 "Invalid ack length: %d", data_len);

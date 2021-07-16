@@ -87,9 +87,9 @@ void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
     goto free;
   }
 
-  fp_dbg("PSK address: 0x%08x",
-         GUINT32_FROM_LE(
-             ((GoodixPresetPskR *)(data + sizeof(guint8)))->address));
+  fp_dbg(
+      "PSK address: 0x%08x",
+      GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->address));
 
   pmk_len =
       GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->length);
@@ -102,8 +102,8 @@ void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
 
   fp_dbg("PMK length: %d", pmk_len);
 
-  pmk = data_to_string(data + sizeof(guint8) + sizeof(GoodixPresetPskR),
-                       pmk_len);
+  pmk =
+      data_to_string(data + sizeof(guint8) + sizeof(GoodixPresetPskR), pmk_len);
 
   fp_dbg("Device PMK hash: 0x%s", pmk);
 
@@ -130,7 +130,7 @@ void goodix_receive_ack(FpiSsm *ssm, guint8 *data, gsize data_len,
   guint8 cmd;
   gboolean has_no_config;
 
-  goodix_decode_ack(&cmd, &has_no_config, data, data_len, data_destroy, error);
+  goodix_decode_ack(data, data_len, data_destroy, &cmd, &has_no_config, error);
 
   if (*error) return;
 
@@ -187,8 +187,8 @@ void goodix_receive_protocol(FpiSsm *ssm, guint8 *data, gsize data_len,
   guint8 *payload = NULL;
   guint16 payload_len, payload_ptr_len;
 
-  payload_ptr_len = goodix_decode_protocol(&cmd, &payload, &payload_len, TRUE,
-                                           data, data_len, data_destroy, error);
+  payload_ptr_len = goodix_decode_protocol(data, data_len, data_destroy, TRUE,
+                                           &cmd, &payload, &payload_len, error);
 
   if (*error) goto free;
 
@@ -255,8 +255,8 @@ void goodix_receive_pack(FpiSsm *ssm, guint8 *data, gsize data_len,
   if (data_destroy) data_destroy(data);
   priv->data_len += data_len;
 
-  payload_ptr_len = goodix_decode_pack(&flags, &payload, &payload_len,
-                                       priv->data, priv->data_len, NULL, error);
+  payload_ptr_len = goodix_decode_pack(priv->data, priv->data_len, NULL, &flags,
+                                       &payload, &payload_len, error);
 
   if (*error) goto clear;
 
@@ -331,17 +331,17 @@ void goodix_send_pack(FpiSsm *ssm, guint8 flags, guint8 *payload,
   FpiUsbTransfer *transfer = fpi_usb_transfer_new(dev);
   GError *error = NULL;
   guint8 *data;
-  gsize data_len;
+  guint32 data_len;
 
   transfer->ssm = ssm;
   transfer->short_is_error = TRUE;
 
-  data_len = goodix_encode_pack(&data, TRUE, flags, payload, payload_len,
-                                payload_destroy);
+  data_len = goodix_encode_pack(flags, payload, payload_len, payload_destroy,
+                                TRUE, &data);
 
   // TODO separate in an other function
 
-  for (gsize i = 0; i < data_len; i += GOODIX_EP_OUT_MAX_BUF_SIZE) {
+  for (guint32 i = 0; i < data_len; i += GOODIX_EP_OUT_MAX_BUF_SIZE) {
     fpi_usb_transfer_fill_bulk_full(transfer, class->ep_out, data + i,
                                     GOODIX_EP_OUT_MAX_BUF_SIZE, NULL);
 
@@ -368,14 +368,14 @@ void goodix_send_protocol(FpiSsm *ssm, guint8 cmd, guint8 *payload,
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
   guint8 *data;
-  gsize data_len;
+  guint32 data_len;
 
   priv->cmd = cmd;
   priv->callback = callback;
   priv->user_data = user_data;
 
-  data_len = goodix_encode_protocol(&data, FALSE, cmd, calc_checksum, payload,
-                                    payload_len, payload_destroy);
+  data_len = goodix_encode_protocol(cmd, payload, payload_len, payload_destroy,
+                                    calc_checksum, FALSE, &data);
 
   fp_dbg("Running command: 0x%02x", cmd);
 
@@ -449,8 +449,8 @@ void goodix_send_write_sensor_register(FpiSsm *ssm, guint16 address,
   // Only support one address and one value
 
   GoodixWriteSensorRegister payload = {.multiples = FALSE,
-                                          .address = GUINT16_TO_LE(address),
-                                          .value = GUINT16_TO_LE(value)};
+                                       .address = GUINT16_TO_LE(address),
+                                       .value = GUINT16_TO_LE(value)};
 
   goodix_send_protocol(ssm, GOODIX_CMD_WRITE_SENSOR_REGISTER,
                        (guint8 *)&payload, sizeof(payload), NULL, TRUE, NULL,
@@ -509,8 +509,8 @@ void goodix_send_reset(FpiSsm *ssm, gboolean reset_sensor, guint8 sleep_time,
   // Only support reset sensor
 
   GoodixReset payload = {.soft_reset_mcu = FALSE,
-                          .reset_sensor = reset_sensor ? TRUE : FALSE,
-                          .sleep_time = sleep_time};
+                         .reset_sensor = reset_sensor ? TRUE : FALSE,
+                         .sleep_time = sleep_time};
 
   goodix_send_protocol(ssm, GOODIX_CMD_RESET, (guint8 *)&payload,
                        sizeof(payload), NULL, TRUE, G_CALLBACK(callback),
@@ -581,7 +581,7 @@ void goodix_send_preset_psk_read_r(FpiSsm *ssm, guint32 address, guint32 length,
                                    GoodixPresetPskReadRCallback callback,
                                    gpointer user_data) {
   GoodixPresetPskR payload = {.address = GUINT32_TO_LE(address),
-                                 .length = GUINT32_TO_LE(length)};
+                              .length = GUINT32_TO_LE(length)};
 
   goodix_send_protocol(ssm, GOODIX_CMD_PRESET_PSK_READ_R, (guint8 *)&payload,
                        sizeof(payload), NULL, TRUE, G_CALLBACK(callback),
