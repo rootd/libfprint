@@ -75,7 +75,7 @@ void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
   guint32 pmk_len;
   gchar *pmk = NULL;
 
-  if (data_len < sizeof(guint8) + sizeof(goodix_preset_psk_r)) {
+  if (data_len < sizeof(guint8) + sizeof(GoodixPresetPskR)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                 "Invalid PSK read reply length: %ld", data_len);
     goto free;
@@ -89,12 +89,12 @@ void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
 
   fp_dbg("PSK address: 0x%08x",
          GUINT32_FROM_LE(
-             ((goodix_preset_psk_r *)(data + sizeof(guint8)))->address));
+             ((GoodixPresetPskR *)(data + sizeof(guint8)))->address));
 
   pmk_len =
-      GUINT32_FROM_LE(((goodix_preset_psk_r *)(data + sizeof(guint8)))->length);
+      GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->length);
 
-  if (pmk_len > data_len - sizeof(guint8) - sizeof(goodix_preset_psk_r)) {
+  if (pmk_len > data_len - sizeof(guint8) - sizeof(GoodixPresetPskR)) {
     g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                 "Invalid PMK length: %d", pmk_len);
     goto free;
@@ -102,7 +102,7 @@ void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
 
   fp_dbg("PMK length: %d", pmk_len);
 
-  pmk = data_to_string(data + sizeof(guint8) + sizeof(goodix_preset_psk_r),
+  pmk = data_to_string(data + sizeof(guint8) + sizeof(GoodixPresetPskR),
                        pmk_len);
 
   fp_dbg("Device PMK hash: 0x%s", pmk);
@@ -111,7 +111,7 @@ void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data, gsize data_len,
 
   if (priv->callback)
     if (((GoodixPresetPskReadRCallback)priv->callback)(
-            data + sizeof(guint8) + sizeof(goodix_preset_psk_r), pmk_len, error,
+            data + sizeof(guint8) + sizeof(GoodixPresetPskR), pmk_len, error,
             priv->user_data))
       goto free;
 
@@ -383,7 +383,7 @@ void goodix_send_protocol(FpiSsm *ssm, guint8 cmd, guint8 *payload,
 }
 
 void goodix_send_nop(FpiSsm *ssm) {
-  goodix_nop payload = {.unknown = 0x00000000};
+  GoodixNop payload = {.unknown = 0x00000000};
 
   goodix_send_protocol(ssm, GOODIX_CMD_NOP, (guint8 *)&payload, sizeof(payload),
                        NULL, FALSE, NULL, NULL);
@@ -392,7 +392,7 @@ void goodix_send_nop(FpiSsm *ssm) {
 }
 
 void goodix_send_mcu_get_image(FpiSsm *ssm) {
-  goodix_default payload = {.unused_flags = 0x01};
+  GoodixDefault payload = {.unused_flags = 0x01};
 
   goodix_send_protocol(ssm, GOODIX_CMD_MCU_GET_IMAGE, (guint8 *)&payload,
                        sizeof(payload), NULL, TRUE, NULL, NULL);
@@ -429,7 +429,7 @@ void goodix_send_nav_0(FpiSsm *ssm,
                        void (*callback)(guint8 *data, guint16 data_len,
                                         gpointer user_data, GError **error),
                        gpointer user_data) {
-  goodix_default payload = {.unused_flags = 0x01};
+  GoodixDefault payload = {.unused_flags = 0x01};
 
   goodix_send_protocol(ssm, GOODIX_CMD_NAV_0, (guint8 *)&payload,
                        sizeof(payload), NULL, TRUE, G_CALLBACK(callback),
@@ -437,7 +437,7 @@ void goodix_send_nav_0(FpiSsm *ssm,
 }
 
 void goodix_send_mcu_switch_to_idle_mode(FpiSsm *ssm, guint8 sleep_time) {
-  goodix_mcu_switch_to_idle_mode payload = {.sleep_time = sleep_time};
+  GoodixMcuSwitchToIdleMode payload = {.sleep_time = sleep_time};
 
   goodix_send_protocol(ssm, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE,
                        (guint8 *)&payload, sizeof(payload), NULL, TRUE, NULL,
@@ -448,7 +448,7 @@ void goodix_send_write_sensor_register(FpiSsm *ssm, guint16 address,
                                        guint16 value) {
   // Only support one address and one value
 
-  goodix_write_sensor_register payload = {.multiples = FALSE,
+  GoodixWriteSensorRegister payload = {.multiples = FALSE,
                                           .address = GUINT16_TO_LE(address),
                                           .value = GUINT16_TO_LE(value)};
 
@@ -464,7 +464,7 @@ void goodix_send_read_sensor_register(
     gpointer user_data) {
   // Only support one address
 
-  goodix_read_sensor_register payload = {
+  GoodixReadSensorRegister payload = {
       .multiples = FALSE, .address = GUINT16_TO_LE(address), .length = length};
 
   goodix_send_protocol(ssm, GOODIX_CMD_READ_SENSOR_REGISTER, (guint8 *)&payload,
@@ -487,7 +487,7 @@ void goodix_send_set_powerdown_scan_frequency(
     void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
                      GError **error),
     gpointer user_data) {
-  goodix_set_powerdown_scan_frequency payload = {
+  GoodixSetPowerdownScanFrequency payload = {
       .powerdown_scan_frequency = GUINT16_TO_LE(powerdown_scan_frequency)};
 
   goodix_send_protocol(ssm, GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY,
@@ -496,7 +496,7 @@ void goodix_send_set_powerdown_scan_frequency(
 }
 
 void goodix_send_enable_chip(FpiSsm *ssm, gboolean enable) {
-  goodix_enable_chip payload = {.enable = enable ? TRUE : FALSE};
+  GoodixEnableChip payload = {.enable = enable ? TRUE : FALSE};
 
   goodix_send_protocol(ssm, GOODIX_CMD_ENABLE_CHIP, (guint8 *)&payload,
                        sizeof(payload), NULL, TRUE, NULL, NULL);
@@ -508,7 +508,7 @@ void goodix_send_reset(FpiSsm *ssm, gboolean reset_sensor, guint8 sleep_time,
                        gpointer user_data) {
   // Only support reset sensor
 
-  goodix_reset payload = {.soft_reset_mcu = FALSE,
+  GoodixReset payload = {.soft_reset_mcu = FALSE,
                           .reset_sensor = reset_sensor ? TRUE : FALSE,
                           .sleep_time = sleep_time};
 
@@ -520,7 +520,7 @@ void goodix_send_reset(FpiSsm *ssm, gboolean reset_sensor, guint8 sleep_time,
 void goodix_send_firmware_version(FpiSsm *ssm,
                                   GoodixFirmwareVersionCallback callback,
                                   gpointer user_data) {
-  goodix_none payload = {};
+  GoodixNone payload = {};
 
   goodix_send_protocol(ssm, GOODIX_CMD_FIRMWARE_VERSION, (guint8 *)&payload,
                        sizeof(payload), NULL, TRUE, G_CALLBACK(callback),
@@ -533,7 +533,7 @@ void goodix_send_query_mcu_state(FpiSsm *ssm,
                                                   gpointer user_data,
                                                   GError **error),
                                  gpointer user_data) {
-  goodix_query_mcu_state payload = {.unused_flags = 0x55};
+  GoodixQueryMcuState payload = {.unused_flags = 0x55};
 
   goodix_send_protocol(ssm, GOODIX_CMD_QUERY_MCU_STATE, (guint8 *)&payload,
                        sizeof(payload), NULL, TRUE, G_CALLBACK(callback),
@@ -541,7 +541,7 @@ void goodix_send_query_mcu_state(FpiSsm *ssm,
 }
 
 void goodix_send_request_tls_connection(FpiSsm *ssm) {
-  goodix_none payload = {};
+  GoodixNone payload = {};
 
   goodix_send_protocol(ssm, GOODIX_CMD_REQUEST_TLS_CONNECTION,
                        (guint8 *)&payload, sizeof(payload), NULL, TRUE, NULL,
@@ -549,7 +549,7 @@ void goodix_send_request_tls_connection(FpiSsm *ssm) {
 }
 
 void goodix_send_tls_successfully_established(FpiSsm *ssm) {
-  goodix_none payload = {};
+  GoodixNone payload = {};
 
   goodix_send_protocol(ssm, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
                        (guint8 *)&payload, sizeof(payload), NULL, TRUE, NULL,
@@ -567,8 +567,8 @@ void goodix_send_preset_psk_write_r(FpiSsm *ssm, guint32 address, guint8 *psk,
 
   guint8 *payload = g_malloc(sizeof(payload) + psk_len);
 
-  ((goodix_preset_psk_r *)payload)->address = GUINT32_TO_LE(address);
-  ((goodix_preset_psk_r *)payload)->length = GUINT32_TO_LE(psk_len);
+  ((GoodixPresetPskR *)payload)->address = GUINT32_TO_LE(address);
+  ((GoodixPresetPskR *)payload)->length = GUINT32_TO_LE(psk_len);
   memcpy(payload + sizeof(payload), psk, psk_len);
   if (psk_destroy) psk_destroy(psk);
 
@@ -580,7 +580,7 @@ void goodix_send_preset_psk_write_r(FpiSsm *ssm, guint32 address, guint8 *psk,
 void goodix_send_preset_psk_read_r(FpiSsm *ssm, guint32 address, guint32 length,
                                    GoodixPresetPskReadRCallback callback,
                                    gpointer user_data) {
-  goodix_preset_psk_r payload = {.address = GUINT32_TO_LE(address),
+  GoodixPresetPskR payload = {.address = GUINT32_TO_LE(address),
                                  .length = GUINT32_TO_LE(length)};
 
   goodix_send_protocol(ssm, GOODIX_CMD_PRESET_PSK_READ_R, (guint8 *)&payload,
