@@ -22,6 +22,8 @@
 
 #include "goodix_proto.h"
 
+// TODO: Use valid_len instead of 2 length
+
 guint8 goodix_calc_checksum(guint8 *data, guint16 data_len) {
   guint8 checksum = 0;
 

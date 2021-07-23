@@ -35,44 +35,78 @@ struct _FpiDeviceGoodixTlsClass {
   guint8 ep_out;
 };
 
-typedef gboolean (*GoodixFirmwareVersionCallback)(gchar *firmware,
-                                                  GError **error,
-                                                  gpointer user_data);
+typedef struct __attribute__((__packed__)) _GoodixCallbackInfo {
+  GCallback callback;
+  gpointer user_data;
+} GoodixCallbackInfo;
 
-typedef gboolean (*GoodixPresetPskReadRCallback)(guint32 address, guint8 *psk_r,
-                                                 guint16 psk_r_len,
-                                                 GError **error,
-                                                 gpointer user_data);
+typedef void (*GoodixCmdCallback)(FpDevice *dev, guint8 *data, guint16 length,
+                                  gpointer user_data, GError *error);
 
-gchar *data_to_str(guint8 *data, guint32 data_len);
+typedef void (*GoodixFirmwareVersionCallback)(FpDevice *dev, gchar *firmware,
+                                              gpointer user_data,
+                                              GError *error);
+
+typedef void (*GoodixPresetPskReadRCallback)(FpDevice *dev, gboolean success,
+                                             guint32 address, guint8 *psk_r,
+                                             guint16 length, gpointer user_data,
+                                             GError *error);
+
+typedef void (*GoodixSuccessCallback)(FpDevice *dev, gboolean success,
+                                      gpointer user_data, GError *error);
+
+typedef void (*GoodixResetCallback)(FpDevice *dev, gboolean success,
+                                    guint16 number, gpointer user_data,
+                                    GError *error);
+
+typedef void (*GoodixNoneCallback)(FpDevice *dev, gpointer user_data,
+                                   GError *error);
+
+typedef void (*GoodixDefaultCallback)(FpDevice *dev, guint8 *data,
+                                      guint16 length, gpointer user_data,
+                                      GError *error);
+
+gchar *data_to_str(guint8 *data, guint32 length);
 
 // ---- GOODIX RECEIVE SECTION START ----
 
-void goodix_receive_done(FpiSsm *ssm, guint8 cmd);
+void goodix_receive_done(FpDevice *dev, guint8 *data, guint16 length,
+                         GError *error);
 
-void goodix_receive_preset_psk_read_r(FpiSsm *ssm, guint8 *data,
-                                      guint16 data_len,
-                                      GDestroyNotify data_destroy,
-                                      GError **error);
+void goodix_receive_success(FpDevice *dev, guint8 *data, guint16 length,
+                            gpointer user_data, GError *error);
 
-void goodix_receive_ack(FpiSsm *ssm, guint8 *data, guint16 data_len,
-                        GDestroyNotify data_destroy, GError **error);
+void goodix_receive_reset(FpDevice *dev, guint8 *data, guint16 length,
+                          gpointer user_data, GError *error);
 
-void goodix_receive_firmware_version(FpiSsm *ssm, guint8 *data,
-                                     guint16 data_len,
-                                     GDestroyNotify data_destroy,
-                                     GError **error);
+void goodix_receive_none(FpDevice *dev, guint8 *data, guint16 length,
+                         gpointer user_data, GError *error);
 
-void goodix_receive_protocol(FpiSsm *ssm, guint8 *data, guint32 data_len,
-                             GDestroyNotify data_destroy, GError **error);
+void goodix_receive_default(FpDevice *dev, guint8 *data, guint16 length,
+                            gpointer user_data, GError *error);
 
-void goodix_receive_pack(FpiSsm *ssm, guint8 *data, guint32 data_len,
-                         GDestroyNotify data_destroy, GError **error);
+void goodix_receive_preset_psk_read_r(FpDevice *dev, guint8 *data,
+                                      guint16 length, gpointer user_data,
+                                      GError *error);
+
+void goodix_receive_preset_psk_write_r(FpDevice *dev, guint8 *data,
+                                       guint16 length, gpointer user_data,
+                                       GError *error);
+
+void goodix_receive_ack(FpDevice *dev, guint8 *data, guint16 length);
+
+void goodix_receive_firmware_version(FpDevice *dev, guint8 *data,
+                                     guint16 length, gpointer user_data,
+                                     GError *error);
+
+void goodix_receive_protocol(FpDevice *dev, guint8 *data, guint32 length);
+
+void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length);
 
 void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
                             gpointer user_data, GError *error);
 
-void goodix_receive_data(FpiSsm *ssm);
+void goodix_receive_data(FpDevice *dev);
 
 // ---- GOODIX RECEIVE SECTION END ----
 
@@ -80,95 +114,97 @@ void goodix_receive_data(FpiSsm *ssm);
 
 // ---- GOODIX SEND SECTION START ----
 
-void goodix_send_pack(FpiSsm *ssm, guint8 flags, guint8 *payload,
-                      guint16 payload_len, GDestroyNotify payload_destroy);
+gboolean goodix_send_data(FpDevice *dev, guint8 *data, guint32 length,
+                          GDestroyNotify free_func, GError **error);
 
-void goodix_send_protocol(FpiSsm *ssm, guint8 cmd, guint8 *payload,
-                          guint16 payload_len, GDestroyNotify payload_destroy,
-                          gboolean calc_checksum, GCallback callback,
-                          gpointer user_data);
+gboolean goodix_send_pack(FpDevice *dev, guint8 flags, guint8 *payload,
+                          guint16 length, GDestroyNotify free_func,
+                          GError **error);
 
-void goodix_send_nop(FpiSsm *ssm);
+void goodix_send_protocol(FpDevice *dev, guint8 cmd, guint8 *payload,
+                          guint16 length, GDestroyNotify free_func,
+                          gboolean calc_checksum, gboolean reply,
+                          GoodixCmdCallback callback, gpointer user_data);
 
-void goodix_send_mcu_get_image(FpiSsm *ssm);
+void goodix_send_nop(FpDevice *dev, GoodixNoneCallback callback,
+                     gpointer user_data);
 
-void goodix_send_mcu_switch_to_fdt_down(
-    FpiSsm *ssm, guint8 *mode, guint16 mode_len, GDestroyNotify mode_destroy,
-    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
-                     GError **error),
-    gpointer user_data);
+void goodix_send_mcu_get_image(FpDevice *dev, GoodixNoneCallback callback,
+                               gpointer user_data);
 
-void goodix_send_mcu_switch_to_fdt_up(
-    FpiSsm *ssm, guint8 *mode, guint16 mode_len, GDestroyNotify mode_destroy,
-    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
-                     GError **error),
-    gpointer user_data);
+void goodix_send_mcu_switch_to_fdt_down(FpDevice *dev, guint8 *mode,
+                                        guint16 length,
+                                        GDestroyNotify free_func,
+                                        GoodixDefaultCallback callback,
+                                        gpointer user_data);
 
-void goodix_send_mcu_switch_to_fdt_mode(
-    FpiSsm *ssm, guint8 *mode, guint16 mode_len, GDestroyNotify mode_destroy,
-    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
-                     GError **error),
-    gpointer user_data);
+void goodix_send_mcu_switch_to_fdt_up(FpDevice *dev, guint8 *mode,
+                                      guint16 length, GDestroyNotify free_func,
+                                      GoodixDefaultCallback callback,
+                                      gpointer user_data);
 
-void goodix_send_nav_0(FpiSsm *ssm,
-                       void (*callback)(guint8 *data, guint16 data_len,
-                                        gpointer user_data, GError **error),
+void goodix_send_mcu_switch_to_fdt_mode(FpDevice *dev, guint8 *mode,
+                                        guint16 length,
+                                        GDestroyNotify free_func,
+                                        GoodixDefaultCallback callback,
+                                        gpointer user_data);
+
+void goodix_send_nav_0(FpDevice *dev, GoodixDefaultCallback callback,
                        gpointer user_data);
 
-void goodix_send_mcu_switch_to_idle_mode(FpiSsm *ssm, guint8 sleep_time);
+void goodix_send_mcu_switch_to_idle_mode(FpDevice *dev, guint8 sleep_time,
+                                         GoodixNoneCallback callback,
+                                         gpointer user_data);
 
-void goodix_send_write_sensor_register(FpiSsm *ssm, guint16 address,
-                                       guint16 value);
+void goodix_send_write_sensor_register(FpDevice *dev, guint16 address,
+                                       guint16 value,
+                                       GoodixNoneCallback callback,
+                                       gpointer user_data);
 
-void goodix_send_read_sensor_register(
-    FpiSsm *ssm, guint16 address, guint8 length,
-    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
-                     GError **error),
-    gpointer user_data);
+void goodix_send_read_sensor_register(FpDevice *dev, guint16 address,
+                                      guint8 length,
+                                      GoodixDefaultCallback callback,
+                                      gpointer user_data);
 
-void goodix_send_upload_config_mcu(
-    FpiSsm *ssm, guint8 *config, guint16 config_len,
-    GDestroyNotify config_destroy,
-    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
-                     GError **error),
-    gpointer user_data);
+void goodix_send_upload_config_mcu(FpDevice *dev, guint8 *config,
+                                   guint16 length, GDestroyNotify free_func,
+                                   GoodixSuccessCallback callback,
+                                   gpointer user_data);
 
-void goodix_send_set_powerdown_scan_frequency(
-    FpiSsm *ssm, guint16 powerdown_scan_frequency,
-    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
-                     GError **error),
-    gpointer user_data);
+void goodix_send_set_powerdown_scan_frequency(FpDevice *dev,
+                                              guint16 powerdown_scan_frequency,
+                                              GoodixSuccessCallback callback,
+                                              gpointer user_data);
 
-void goodix_send_enable_chip(FpiSsm *ssm, gboolean enable);
+void goodix_send_enable_chip(FpDevice *dev, gboolean enable,
+                             GoodixNoneCallback callback, gpointer user_data);
 
-void goodix_send_reset(FpiSsm *ssm, gboolean reset_sensor, guint8 sleep_time,
-                       void (*callback)(guint8 *data, guint16 data_len,
-                                        gpointer user_data, GError **error),
-                       gpointer user_data);
+void goodix_send_reset(FpDevice *dev, gboolean reset_sensor, guint8 sleep_time,
+                       GoodixResetCallback callback, gpointer user_data);
 
-void goodix_send_firmware_version(FpiSsm *ssm,
+void goodix_send_firmware_version(FpDevice *dev,
                                   GoodixFirmwareVersionCallback callback,
                                   gpointer user_data);
 
-void goodix_send_query_mcu_state(FpiSsm *ssm,
-                                 void (*callback)(guint8 *data,
-                                                  guint16 data_len,
-                                                  gpointer user_data,
-                                                  GError **error),
+void goodix_send_query_mcu_state(FpDevice *dev, GoodixDefaultCallback callback,
                                  gpointer user_data);
 
-void goodix_send_request_tls_connection(FpiSsm *ssm);
+void goodix_send_request_tls_connection(FpDevice *dev,
+                                        GoodixNoneCallback callback,
+                                        gpointer user_data);
 
-void goodix_send_tls_successfully_established(FpiSsm *ssm);
+void goodix_send_tls_successfully_established(FpDevice *dev,
+                                              GoodixNoneCallback callback,
+                                              gpointer user_data);
 
-void goodix_send_preset_psk_write_r(
-    FpiSsm *ssm, guint32 address, guint8 *psk_r, guint32 psk_r_len,
-    GDestroyNotify psk_destroy,
-    void (*callback)(guint8 *data, guint16 data_len, gpointer user_data,
-                     GError **error),
-    gpointer user_data);
+void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 address,
+                                    guint8 *psk_r, guint16 length,
+                                    GDestroyNotify free_func,
+                                    GoodixSuccessCallback callback,
+                                    gpointer user_data);
 
-void goodix_send_preset_psk_read_r(FpiSsm *ssm, guint32 address, guint32 length,
+void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 address,
+                                   guint16 length,
                                    GoodixPresetPskReadRCallback callback,
                                    gpointer user_data);
 

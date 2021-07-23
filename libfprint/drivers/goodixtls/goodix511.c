@@ -46,98 +46,164 @@ enum activate_states {
   ACTIVATE_CHECK_FW_VER,
   ACTIVATE_CHECK_PSK,
   ACTIVATE_RESET,
+  BREAK,
   ACTIVATE_SET_MCU_IDLE,
   ACTIVATE_SET_MCU_CONFIG,
   ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY,
   ACTIVATE_NUM_STATES,
 };
 
-static gboolean check_firmware(gchar *firmware, GError **error,
-                               gpointer user_data) {
-  if (strcmp(firmware, GOODIX_511_FIRMWARE_VERSION)) {
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid device firmware: \"%s\"", firmware);
-    return TRUE;
+static void check_none(FpDevice *dev, gpointer user_data, GError *error) {
+  if (error) {
+    fpi_ssm_mark_failed(user_data, error);
+    return;
   }
 
-  return FALSE;
+  fpi_ssm_next_state(user_data);
 }
 
-static gboolean check_psk_r(guint32 address, guint8 *psk_r, guint16 psk_r_len,
-                            GError **error, gpointer user_data) {
-  gchar *psk_r_str;
-  if (address != GOODIX_511_PSK_R_ADDRESS) {
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid device PSK R address: 0x%08x", address);
-
-    return TRUE;
+static void check_firmware_version(FpDevice *dev, gchar *firmware,
+                                   gpointer user_data, GError *error) {
+  if (error) {
+    fpi_ssm_mark_failed(user_data, error);
+    return;
   }
 
-  if (psk_r_len != sizeof(goodix_511_psk_r_0)) {
-    psk_r_str = data_to_str(psk_r, psk_r_len);
+  fp_dbg("Device firmware: \"%s\"", firmware);
 
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+  if (strcmp(firmware, GOODIX_511_FIRMWARE_VERSION)) {
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device firmware: \"%s\"", firmware);
+    fpi_ssm_mark_failed(user_data, error);
+    return;
+  }
+
+  fpi_ssm_next_state(user_data);
+}
+
+static void check_reset(FpDevice *dev, gboolean success, guint16 number,
+                        gpointer user_data, GError *error) {
+  if (error) {
+    fpi_ssm_mark_failed(user_data, error);
+    return;
+  }
+
+  if (!success) {
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Failed to reset device");
+    fpi_ssm_mark_failed(user_data, error);
+    return;
+  }
+
+  fp_dbg("Device reset number: %d", number);
+
+  if (number != GOODIX_511_RESET_NUMBER) {
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device reset number: %d", number);
+    fpi_ssm_mark_failed(user_data, error);
+    return;
+  }
+
+  fpi_ssm_next_state(user_data);
+}
+
+static void check_preset_psk_read_r(FpDevice *dev, gboolean success,
+                                    guint32 address, guint8 *psk_r,
+                                    guint16 length, gpointer user_data,
+                                    GError *error) {
+  g_autofree gchar *psk_r_str = data_to_str(psk_r, length);
+
+  if (error) {
+    fpi_ssm_mark_failed(user_data, error);
+    return;
+  }
+
+  if (!success) {
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Failed to read PSK R from device");
+    fpi_ssm_mark_failed(user_data, error);
+    return;
+  }
+
+  fp_dbg("Device PSK R: 0x%s", psk_r_str);
+  fp_dbg("Device PSK R address: 0x%08x", address);
+
+  if (address != GOODIX_511_PSK_R_ADDRESS) {
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device PSK R address: 0x%08x", address);
+    fpi_ssm_mark_failed(user_data, error);
+    return;
+  }
+
+  if (length != sizeof(goodix_511_psk_r_0)) {
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                 "Invalid device PSK R: 0x%s", psk_r_str);
-    g_free(psk_r_str);
-
-    return TRUE;
+    fpi_ssm_mark_failed(user_data, error);
+    return;
   }
 
   if (memcmp(psk_r, goodix_511_psk_r_0, sizeof(goodix_511_psk_r_0))) {
-    psk_r_str = data_to_str(psk_r, psk_r_len);
-
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid device PSK R: 0x%s", psk_r);
-    g_free(psk_r_str);
-
-    return TRUE;
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                "Invalid device PSK R: 0x%s", psk_r_str);
+    fpi_ssm_mark_failed(user_data, error);
+    return;
   }
 
-  return FALSE;
+  fpi_ssm_next_state(user_data);
 }
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
+  GError *error = NULL;
+
   switch (fpi_ssm_get_cur_state(ssm)) {
     case ACTIVATE_READ_AND_NOP:
-      // Nop seems to clear the previous command buffer. But we are unable to do
-      // so.
-      goodix_receive_data(ssm);
-      goodix_send_nop(ssm);
+      // Nop seems to clear the previous command buffer. But we are unable to
+      // do so.
+      goodix_receive_data(dev);
+      goodix_send_nop(dev, check_none, ssm);
+      goodix_receive_done(dev, NULL, 0, NULL);
       break;
 
     case ACTIVATE_ENABLE_CHIP:
-      goodix_send_enable_chip(ssm, TRUE);
+      goodix_send_enable_chip(dev, TRUE, check_none, ssm);
       break;
 
     case ACTIVATE_NOP:
-      goodix_send_nop(ssm);
+      goodix_send_nop(dev, check_none, ssm);
+      goodix_receive_done(dev, NULL, 0, NULL);
       break;
 
     case ACTIVATE_CHECK_FW_VER:
-      goodix_send_firmware_version(ssm, check_firmware, NULL);
+      goodix_send_firmware_version(dev, check_firmware_version, ssm);
       break;
 
     case ACTIVATE_CHECK_PSK:
-      goodix_send_preset_psk_read_r(ssm, GOODIX_511_PSK_R_ADDRESS, 0,
-                                    check_psk_r, NULL);
+      goodix_send_preset_psk_read_r(dev, GOODIX_511_PSK_R_ADDRESS, 0,
+                                    check_preset_psk_read_r, ssm);
       break;
 
     case ACTIVATE_RESET:
-      goodix_send_reset(ssm, TRUE, 20, NULL, NULL);
+      goodix_send_reset(dev, TRUE, 20, check_reset, ssm);
       break;
 
-    case ACTIVATE_SET_MCU_IDLE:
-      goodix_send_mcu_switch_to_idle_mode(ssm, 20);
+    case BREAK:
+      g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "Break");
+      fpi_ssm_mark_failed(ssm, error);
       break;
 
-    case ACTIVATE_SET_MCU_CONFIG:
-      goodix_send_upload_config_mcu(
-          ssm, goodix_511_config, sizeof(goodix_511_config), NULL, NULL, NULL);
-      break;
+      // case ACTIVATE_SET_MCU_IDLE:
+      //   goodix_send_mcu_switch_to_idle_mode(ssm, 20);
+      //   break;
 
-    case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY:
-      goodix_send_set_powerdown_scan_frequency(ssm, 100, NULL, NULL);
-      break;
+      // case ACTIVATE_SET_MCU_CONFIG:
+      //   goodix_send_upload_config_mcu(
+      //       ssm, goodix_511_config, sizeof(goodix_511_config), NULL, NULL,
+      //       NULL);
+      //   break;
+
+      // case ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY:
+      //   goodix_send_set_powerdown_scan_frequency(ssm, 100, NULL, NULL);
+      //   break;
   }
 }
 
