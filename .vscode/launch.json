@@ -12,6 +12,7 @@
       "environment": [],
       "MIMode": "gdb",
       "avoidWindowsConsoleRedirection": true,
+      "preLaunchTask": "${defaultBuildTask}",
       "setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",

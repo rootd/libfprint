@@ -58,8 +58,7 @@ G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(FpiDeviceGoodixTls, fpi_device_goodixtls,
 gchar *data_to_str(guint8 *data, guint32 length) {
   gchar *string = g_malloc((length * 2) + 1);
 
-  for (guint32 i = 0; i < length; i++)
-    sprintf(string + i * 2, "%02x", *(data + i));
+  for (guint32 i = 0; i < length; i++) sprintf(string + i * 2, "%02x", data[i]);
 
   return string;
 }
@@ -138,7 +137,7 @@ void goodix_receive_reset(FpDevice *dev, guint8 *data, guint16 length,
   }
 
   callback(dev, data[0] == 0x00 ? FALSE : TRUE,
-           GUINT16_FROM_LE(*(guint16 *)(data + sizeof(guint8))),
+           GUINT16_FROM_LE(*(guint16 *)(data + sizeof(guint8))),  // TODO
            cb_info->user_data, NULL);
 }
 
@@ -247,7 +246,7 @@ void goodix_receive_ack(FpDevice *dev, guint8 *data, guint16 length,
 
   if (!((GoodixAck *)data)->always_true) {
     // Warn about error.
-    fp_warn("Invalid ACK flags: 0x%02x", *(data + sizeof(guint8)));
+    fp_warn("Invalid ACK flags: 0x%02x", data[sizeof(guint8)]);
     return;
   }
 
