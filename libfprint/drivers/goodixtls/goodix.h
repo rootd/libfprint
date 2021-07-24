@@ -93,7 +93,8 @@ void goodix_receive_preset_psk_write_r(FpDevice *dev, guint8 *data,
                                        guint16 length, gpointer user_data,
                                        GError *error);
 
-void goodix_receive_ack(FpDevice *dev, guint8 *data, guint16 length);
+void goodix_receive_ack(FpDevice *dev, guint8 *data, guint16 length,
+                        gpointer user_data, GError *error);
 
 void goodix_receive_firmware_version(FpDevice *dev, guint8 *data,
                                      guint16 length, gpointer user_data,

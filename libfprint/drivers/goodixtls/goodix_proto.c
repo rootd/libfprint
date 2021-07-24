@@ -22,26 +22,23 @@
 
 #include "goodix_proto.h"
 
-// TODO: Use valid_len instead of 2 length
-
-guint8 goodix_calc_checksum(guint8 *data, guint16 data_len) {
+guint8 goodix_calc_checksum(guint8 *data, guint16 length) {
   guint8 checksum = 0;
 
-  for (guint16 i = 0; i < data_len; i++) checksum += *(data + i);
+  for (guint16 i = 0; i < length; i++) checksum += *(data + i);
 
   return checksum;
 }
 
-guint32 goodix_encode_pack(guint8 flags, guint8 *payload, guint16 payload_len,
-                           GDestroyNotify payload_destroy, gboolean pad_data,
-                           guint8 **data) {
-  guint32 data_ptr_len = sizeof(GoodixPack) + sizeof(guint8) + payload_len;
+void goodix_encode_pack(guint8 flags, guint8 *payload, guint16 payload_len,
+                        gboolean pad_data, guint8 **data, guint32 *data_len) {
+  *data_len = sizeof(GoodixPack) + sizeof(guint8) + payload_len;
 
-  if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
-    data_ptr_len +=
-        GOODIX_EP_OUT_MAX_BUF_SIZE - data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE;
+  if (pad_data && *data_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
+    *data_len +=
+        GOODIX_EP_OUT_MAX_BUF_SIZE - *data_len % GOODIX_EP_OUT_MAX_BUF_SIZE;
 
-  *data = g_malloc0(data_ptr_len);
+  *data = g_malloc0(*data_len);
 
   ((GoodixPack *)*data)->flags = flags;
   ((GoodixPack *)*data)->length = GUINT16_TO_LE(payload_len);
@@ -49,137 +46,73 @@ guint32 goodix_encode_pack(guint8 flags, guint8 *payload, guint16 payload_len,
       goodix_calc_checksum(*data, sizeof(GoodixPack));
 
   memcpy(*data + sizeof(GoodixPack) + sizeof(guint8), payload, payload_len);
-  if (payload_destroy) payload_destroy(payload);
-
-  return data_ptr_len;
 }
 
-guint32 goodix_encode_protocol(guint8 cmd, guint8 *payload, guint16 payload_len,
-                               GDestroyNotify payload_destroy,
-                               gboolean calc_checksum, gboolean pad_data,
-                               guint8 **data) {
-  guint32 data_ptr_len = sizeof(GoodixProtocol) + payload_len + sizeof(guint8);
+void goodix_encode_protocol(guint8 cmd, guint8 *payload, guint16 payload_len,
+                            gboolean calc_checksum, gboolean pad_data,
+                            guint8 **data, guint32 *data_len) {
+  *data_len = sizeof(GoodixProtocol) + payload_len + sizeof(guint8);
 
-  if (pad_data && data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
-    data_ptr_len +=
-        GOODIX_EP_OUT_MAX_BUF_SIZE - data_ptr_len % GOODIX_EP_OUT_MAX_BUF_SIZE;
+  if (pad_data && *data_len % GOODIX_EP_OUT_MAX_BUF_SIZE)
+    *data_len +=
+        GOODIX_EP_OUT_MAX_BUF_SIZE - *data_len % GOODIX_EP_OUT_MAX_BUF_SIZE;
 
-  *data = g_malloc0(data_ptr_len);
+  *data = g_malloc0(*data_len);
 
   ((GoodixProtocol *)*data)->cmd = cmd;
   ((GoodixProtocol *)*data)->length =
       GUINT16_TO_LE(payload_len + sizeof(guint8));
 
   memcpy(*data + sizeof(GoodixProtocol), payload, payload_len);
-  if (payload_destroy) payload_destroy(payload);
 
   if (calc_checksum)
     *(*data + sizeof(GoodixProtocol) + payload_len) =
         0xaa -
         goodix_calc_checksum(*data, sizeof(GoodixProtocol) + payload_len);
   else
-    *(*data + sizeof(GoodixProtocol) + payload_len) = 0x88;
-
-  return data_ptr_len;
+    *(*data + sizeof(GoodixProtocol) + payload_len) = GOODIX_NULL_CHECKSUM;
 }
 
-guint16 goodix_decode_pack(guint8 *data, guint32 data_len,
-                           GDestroyNotify data_destroy, guint8 *flags,
-                           guint8 **payload, guint16 *payload_len,
-                           GError **error) {
-  guint8 checksum;
-  guint16 payload_ptr_len = data_len - sizeof(GoodixPack) - sizeof(guint8);
-  guint16 pack_length;
+gboolean goodix_decode_pack(guint8 *data, guint32 data_len, guint8 *flags,
+                            guint8 **payload, guint16 *payload_len,
+                            gboolean *valid_checksum) {
+  guint16 length;
 
-  if (data_len < sizeof(GoodixPack) + sizeof(guint8)) {
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message pack length: %d", data_len);
-    return 0;
-  }
+  if (data_len < sizeof(GoodixPack) + sizeof(guint8)) return FALSE;
 
-  pack_length = GUINT16_FROM_LE(((GoodixPack *)data)->length);
+  length = GUINT16_FROM_LE(((GoodixPack *)data)->length);
 
-  if (payload_ptr_len >= pack_length) payload_ptr_len = pack_length;
-
-  checksum = goodix_calc_checksum(data, sizeof(GoodixPack));
-  if (checksum != *(data + sizeof(GoodixPack))) {
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message pack checksum: 0x%02x", checksum);
-    return 0;
-  }
-
-  *payload =
-      g_memdup(data + sizeof(GoodixPack) + sizeof(guint8), payload_ptr_len);
-  if (data_destroy) data_destroy(data);
+  if (data_len < length + sizeof(GoodixPack) + sizeof(guint8)) return FALSE;
 
   *flags = ((GoodixPack *)data)->flags;
-  *payload_len = pack_length;
+  *payload = g_memdup(data + sizeof(GoodixPack) + sizeof(guint8), length);
+  *payload_len = length;
+  *valid_checksum = goodix_calc_checksum(data, sizeof(GoodixPack)) ==
+                    data[sizeof(GoodixPack)];
 
-  return payload_ptr_len;
+  return TRUE;
 }
 
-guint16 goodix_decode_protocol(guint8 *data, guint32 data_len,
-                               GDestroyNotify data_destroy,
-                               gboolean calc_checksum, guint8 *cmd,
-                               guint8 **payload, guint16 *payload_len,
-                               GError **error) {
-  guint8 checksum;
-  guint16 payload_ptr_len = data_len - sizeof(GoodixProtocol) - sizeof(guint8);
-  guint16 protocol_length;
+gboolean goodix_decode_protocol(guint8 *data, guint32 data_len, guint8 *cmd,
+                                guint8 **payload, guint16 *payload_len,
+                                gboolean *valid_checksum,
+                                gboolean *valid_null_checksum) {
+  guint16 length;
 
-  if (data_len < sizeof(GoodixProtocol) + sizeof(guint8)) {
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid message protocol length: %d", data_len);
-    return 0;
-  }
+  if (data_len < sizeof(GoodixProtocol) + sizeof(guint8)) return FALSE;
 
-  protocol_length =
-      GUINT16_FROM_LE(((GoodixProtocol *)data)->length) - sizeof(guint8);
+  length = GUINT16_FROM_LE(((GoodixProtocol *)data)->length) - sizeof(guint8);
 
-  if (payload_ptr_len >= protocol_length) {
-    payload_ptr_len = protocol_length;
-
-    if (calc_checksum) {
-      checksum = 0xaa - goodix_calc_checksum(
-                            data, sizeof(GoodixProtocol) + protocol_length);
-      if (checksum != *(data + sizeof(GoodixProtocol) + protocol_length)) {
-        g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                    "Invalid message protocol checksum: 0x%02x", checksum);
-        return 0;
-      }
-    } else if (0x88 != *(data + sizeof(GoodixProtocol) + protocol_length)) {
-      g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                  "Invalid message protocol checksum: 0x%02x", 0x88);
-      return 0;
-    }
-  }
-
-  *payload = g_memdup(data + sizeof(GoodixProtocol), payload_ptr_len);
-  if (data_destroy) data_destroy(data);
+  if (data_len < length + sizeof(GoodixProtocol) + sizeof(guint8)) return FALSE;
 
   *cmd = ((GoodixProtocol *)data)->cmd;
-  *payload_len = protocol_length;
+  *payload = g_memdup(data + sizeof(GoodixProtocol), length);
+  *payload_len = length;
+  *valid_checksum =
+      0xaa - goodix_calc_checksum(data, sizeof(GoodixProtocol) + length) ==
+      data[sizeof(GoodixProtocol) + length];
+  *valid_null_checksum =
+      GOODIX_NULL_CHECKSUM == data[sizeof(GoodixProtocol) + length];
 
-  return payload_ptr_len;
-}
-
-void goodix_decode_ack(guint8 *data, guint16 data_len,
-                       GDestroyNotify data_destroy, guint8 *cmd,
-                       gboolean *has_no_config, GError **error) {
-  if (data_len != sizeof(GoodixAck)) {
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid ack length: %d", data_len);
-    return;
-  }
-
-  if (!((GoodixAck *)data)->always_true) {
-    g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid ack flags: 0x%02x", *(data + sizeof(guint8)));
-    return;
-  }
-
-  *cmd = ((GoodixAck *)data)->cmd;
-  *has_no_config = ((GoodixAck *)data)->has_no_config;
-
-  if (data_destroy) data_destroy(data);
+  return TRUE;
 }

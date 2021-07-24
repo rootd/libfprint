@@ -22,6 +22,8 @@
 #define GOODIX_EP_IN_MAX_BUF_SIZE (0x2000)
 #define GOODIX_EP_OUT_MAX_BUF_SIZE (0x40)
 
+#define GOODIX_NULL_CHECKSUM (0x88)
+
 #define GOODIX_FLAGS_MSG_PROTOCOL (0xa0)
 #define GOODIX_FLAGS_TLS (0xb0)
 
@@ -120,28 +122,20 @@ typedef struct __attribute__((__packed__)) _GoodixNone {
   guint16 : 16;
 } GoodixNone;
 
-guint8 goodix_calc_checksum(guint8 *data, guint16 data_len);
+guint8 goodix_calc_checksum(guint8 *data, guint16 length);
 
-guint32 goodix_encode_pack(guint8 flags, guint8 *payload, guint16 payload_len,
-                           GDestroyNotify payload_destroy, gboolean pad_data,
-                           guint8 **data);
+void goodix_encode_pack(guint8 flags, guint8 *payload, guint16 payload_len,
+                        gboolean pad_data, guint8 **data, guint32 *data_len);
 
-guint32 goodix_encode_protocol(guint8 cmd, guint8 *payload, guint16 payload_len,
-                               GDestroyNotify payload_destroy,
-                               gboolean calc_checksum, gboolean pad_data,
-                               guint8 **data);
+void goodix_encode_protocol(guint8 cmd, guint8 *payload, guint16 payload_len,
+                            gboolean calc_checksum, gboolean pad_data,
+                            guint8 **data, guint32 *data_len);
 
-guint16 goodix_decode_pack(guint8 *data, guint32 data_len,
-                           GDestroyNotify data_destroy, guint8 *flags,
-                           guint8 **payload, guint16 *payload_len,
-                           GError **error);
+gboolean goodix_decode_pack(guint8 *data, guint32 data_len, guint8 *flags,
+                            guint8 **payload, guint16 *payload_len,
+                            gboolean *valid_checksum);
 
-guint16 goodix_decode_protocol(guint8 *data, guint32 data_len,
-                               GDestroyNotify data_destroy,
-                               gboolean calc_checksum, guint8 *cmd,
-                               guint8 **payload, guint16 *payload_len,
-                               GError **error);
-
-void goodix_decode_ack(guint8 *data, guint16 data_len,
-                       GDestroyNotify data_destroy, guint8 *cmd,
-                       gboolean *has_no_config, GError **error);
+gboolean goodix_decode_protocol(guint8 *data, guint32 data_len, guint8 *cmd,
+                                guint8 **payload, guint16 *payload_len,
+                                gboolean *valid_checksum,
+                                gboolean *valid_null_checksum);
