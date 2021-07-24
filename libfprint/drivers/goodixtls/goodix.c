@@ -237,6 +237,7 @@ void goodix_receive_ack(FpDevice *dev, guint8 *data, guint16 length,
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
+  GoodixAck *ack = (GoodixAck *)data;
   guint8 cmd;
 
   if (length != sizeof(GoodixAck)) {
@@ -244,15 +245,15 @@ void goodix_receive_ack(FpDevice *dev, guint8 *data, guint16 length,
     return;
   }
 
-  if (!((GoodixAck *)data)->always_true) {
+  if (!ack->always_true) {
     // Warn about error.
     fp_warn("Invalid ACK flags: 0x%02x", data[sizeof(guint8)]);
     return;
   }
 
-  cmd = ((GoodixAck *)data)->cmd;
+  cmd = ack->cmd;
 
-  if (((GoodixAck *)data)->has_no_config) fp_warn("MCU has no config");
+  if (ack->has_no_config) fp_warn("MCU has no config");
 
   if (priv->cmd != cmd) {
     fp_warn("Invalid ACK command: 0x%02x", cmd);
@@ -851,10 +852,11 @@ void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 address,
   // Only support one address, one payload and one length
 
   guint8 *payload = g_malloc(sizeof(GoodixPresetPskR) + length);
+  GoodixPresetPskR *preset_psk_r = (GoodixPresetPskR *)payload;
   GoodixCallbackInfo *cb_info;
 
-  ((GoodixPresetPskR *)payload)->address = GUINT32_TO_LE(address);
-  ((GoodixPresetPskR *)payload)->length = GUINT32_TO_LE(length);
+  preset_psk_r->address = GUINT32_TO_LE(address);
+  preset_psk_r->length = GUINT32_TO_LE(length);
   memcpy(payload + sizeof(GoodixPresetPskR), psk_r, length);
   if (free_func) free_func(psk_r);
 
