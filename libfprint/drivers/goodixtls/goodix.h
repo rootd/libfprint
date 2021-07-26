@@ -107,6 +107,8 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length);
 void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
                             gpointer user_data, GError *error);
 
+void goodix_receive_timeout_cb(FpDevice *dev, gpointer user_data);
+
 void goodix_receive_data(FpDevice *dev);
 
 // ---- GOODIX RECEIVE SECTION END ----
@@ -124,8 +126,9 @@ gboolean goodix_send_pack(FpDevice *dev, guint8 flags, guint8 *payload,
 
 void goodix_send_protocol(FpDevice *dev, guint8 cmd, guint8 *payload,
                           guint16 length, GDestroyNotify free_func,
-                          gboolean calc_checksum, gboolean reply,
-                          GoodixCmdCallback callback, gpointer user_data);
+                          gboolean calc_checksum, guint timeout_ms,
+                          gboolean reply, GoodixCmdCallback callback,
+                          gpointer user_data);
 
 void goodix_send_nop(FpDevice *dev, GoodixNoneCallback callback,
                      gpointer user_data);

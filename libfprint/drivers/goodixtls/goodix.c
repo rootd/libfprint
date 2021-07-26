@@ -37,6 +37,8 @@ typedef struct {
   gint tls_server_sock;
   SSL_CTX *tls_server_ctx;
 
+  GSource *timeout;
+
   guint8 cmd;
 
   gboolean ack;
@@ -73,6 +75,9 @@ void goodix_receive_done(FpDevice *dev, guint8 *data, guint16 length,
   GoodixCmdCallback callback = priv->callback;
   gpointer user_data = priv->user_data;
 
+  if (!(priv->ack || priv->reply)) return;
+
+  if (priv->timeout) g_clear_pointer(&priv->timeout, g_source_destroy);
   priv->ack = FALSE;
   priv->reply = FALSE;
   priv->callback = NULL;
@@ -362,6 +367,17 @@ void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
   goodix_receive_data(dev);
 }
 
+void goodix_receive_timeout_cb(FpDevice *dev, gpointer user_data) {
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+      fpi_device_goodixtls_get_instance_private(self);
+  GError *error = NULL;
+
+  g_set_error(&error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
+              "Command timed out: 0x%02x", priv->cmd);
+  goodix_receive_done(dev, NULL, 0, error);
+}
+
 void goodix_receive_data(FpDevice *dev) {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
   FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
@@ -418,8 +434,9 @@ gboolean goodix_send_pack(FpDevice *dev, guint8 flags, guint8 *payload,
 
 void goodix_send_protocol(FpDevice *dev, guint8 cmd, guint8 *payload,
                           guint16 length, GDestroyNotify free_func,
-                          gboolean calc_checksum, gboolean reply,
-                          GoodixCmdCallback callback, gpointer user_data) {
+                          gboolean calc_checksum, guint timeout_ms,
+                          gboolean reply, GoodixCmdCallback callback,
+                          gpointer user_data) {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
@@ -427,7 +444,7 @@ void goodix_send_protocol(FpDevice *dev, guint8 cmd, guint8 *payload,
   guint8 *data;
   guint32 data_len;
 
-  if (priv->ack || priv->reply) {
+  if (priv->ack || priv->reply || priv->timeout) {
     // A command is already running.
     fp_warn("A command is already running: 0x%02x", priv->cmd);
     if (free_func) free_func(payload);
@@ -436,6 +453,9 @@ void goodix_send_protocol(FpDevice *dev, guint8 cmd, guint8 *payload,
 
   fp_dbg("Running command: 0x%02x", cmd);
 
+  if (timeout_ms)
+    priv->timeout = fpi_device_add_timeout(
+        dev, timeout_ms, goodix_receive_timeout_cb, NULL, NULL);
   priv->cmd = cmd;
   priv->ack = TRUE;
   priv->reply = reply;
@@ -465,13 +485,15 @@ void goodix_send_nop(FpDevice *dev, GoodixNoneCallback callback,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_NOP, (guint8 *)&payload,
-                         sizeof(payload), NULL, FALSE, FALSE,
+                         sizeof(payload), NULL, FALSE, GOODIX_TIMEOUT, FALSE,
                          goodix_receive_none, cb_info);
+    goodix_receive_done(dev, NULL, 0, NULL);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_NOP, (guint8 *)&payload, sizeof(payload),
-                       NULL, FALSE, FALSE, NULL, NULL);
+                       NULL, FALSE, GOODIX_TIMEOUT, FALSE, NULL, NULL);
+  goodix_receive_done(dev, NULL, 0, NULL);
 }
 
 void goodix_send_mcu_get_image(FpDevice *dev, GoodixNoneCallback callback,
@@ -486,13 +508,14 @@ void goodix_send_mcu_get_image(FpDevice *dev, GoodixNoneCallback callback,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8 *)&payload,
-                         sizeof(payload), NULL, TRUE, FALSE,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
                          goodix_receive_none, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, FALSE, NULL, NULL);
+                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE, NULL,
+                       NULL);
 }
 
 void goodix_send_mcu_switch_to_fdt_down(FpDevice *dev, guint8 *mode,
@@ -509,13 +532,13 @@ void goodix_send_mcu_switch_to_fdt_down(FpDevice *dev, guint8 *mode,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
-                         free_func, TRUE, TRUE, goodix_receive_default,
+                         free_func, TRUE, 0, TRUE, goodix_receive_default,
                          cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
-                       free_func, TRUE, TRUE, NULL, NULL);
+                       free_func, TRUE, 0, TRUE, NULL, NULL);
 }
 
 void goodix_send_mcu_switch_to_fdt_up(FpDevice *dev, guint8 *mode,
@@ -531,13 +554,13 @@ void goodix_send_mcu_switch_to_fdt_up(FpDevice *dev, guint8 *mode,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, mode, length,
-                         free_func, TRUE, TRUE, goodix_receive_default,
+                         free_func, TRUE, 0, TRUE, goodix_receive_default,
                          cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, mode, length,
-                       free_func, TRUE, TRUE, NULL, NULL);
+                       free_func, TRUE, 0, TRUE, NULL, NULL);
 }
 
 void goodix_send_mcu_switch_to_fdt_mode(FpDevice *dev, guint8 *mode,
@@ -554,13 +577,13 @@ void goodix_send_mcu_switch_to_fdt_mode(FpDevice *dev, guint8 *mode,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, mode, length,
-                         free_func, TRUE, TRUE, goodix_receive_default,
+                         free_func, TRUE, 0, TRUE, goodix_receive_default,
                          cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, mode, length,
-                       free_func, TRUE, TRUE, NULL, NULL);
+                       free_func, TRUE, 0, TRUE, NULL, NULL);
 }
 
 void goodix_send_nav_0(FpDevice *dev, GoodixDefaultCallback callback,
@@ -575,13 +598,14 @@ void goodix_send_nav_0(FpDevice *dev, GoodixDefaultCallback callback,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_NAV_0, (guint8 *)&payload,
-                         sizeof(payload), NULL, TRUE, TRUE,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
                          goodix_receive_default, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_NAV_0, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, TRUE, NULL, NULL);
+                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
+                       NULL);
 }
 
 void goodix_send_mcu_switch_to_idle_mode(FpDevice *dev, guint8 sleep_time,
@@ -597,14 +621,14 @@ void goodix_send_mcu_switch_to_idle_mode(FpDevice *dev, guint8 sleep_time,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE,
-                         (guint8 *)&payload, sizeof(payload), NULL, TRUE, FALSE,
-                         goodix_receive_none, cb_info);
+                         (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                         GOODIX_TIMEOUT, FALSE, goodix_receive_none, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_MCU_SWITCH_TO_IDLE_MODE,
-                       (guint8 *)&payload, sizeof(payload), NULL, TRUE, FALSE,
-                       NULL, NULL);
+                       (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                       GOODIX_TIMEOUT, FALSE, NULL, NULL);
 }
 
 void goodix_send_write_sensor_register(FpDevice *dev, guint16 address,
@@ -625,14 +649,14 @@ void goodix_send_write_sensor_register(FpDevice *dev, guint16 address,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_WRITE_SENSOR_REGISTER,
-                         (guint8 *)&payload, sizeof(payload), NULL, TRUE, FALSE,
-                         goodix_receive_none, cb_info);
+                         (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                         GOODIX_TIMEOUT, FALSE, goodix_receive_none, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_WRITE_SENSOR_REGISTER,
-                       (guint8 *)&payload, sizeof(payload), NULL, TRUE, FALSE,
-                       NULL, NULL);
+                       (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                       GOODIX_TIMEOUT, FALSE, NULL, NULL);
 }
 
 void goodix_send_read_sensor_register(FpDevice *dev, guint16 address,
@@ -652,13 +676,14 @@ void goodix_send_read_sensor_register(FpDevice *dev, guint16 address,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_READ_SENSOR_REGISTER,
-                         (guint8 *)&payload, sizeof(payload), NULL, TRUE, TRUE,
-                         goodix_receive_default, cb_info);
+                         (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                         GOODIX_TIMEOUT, TRUE, goodix_receive_default, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_READ_SENSOR_REGISTER, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, TRUE, NULL, NULL);
+                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
+                       NULL);
 }
 
 void goodix_send_upload_config_mcu(FpDevice *dev, guint8 *config,
@@ -675,13 +700,13 @@ void goodix_send_upload_config_mcu(FpDevice *dev, guint8 *config,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_UPLOAD_CONFIG_MCU, config, length,
-                         free_func, TRUE, TRUE, goodix_receive_success,
-                         cb_info);
+                         free_func, TRUE, GOODIX_TIMEOUT, TRUE,
+                         goodix_receive_success, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_UPLOAD_CONFIG_MCU, config, length,
-                       free_func, TRUE, TRUE, NULL, NULL);
+                       free_func, TRUE, GOODIX_TIMEOUT, TRUE, NULL, NULL);
 }
 
 void goodix_send_set_powerdown_scan_frequency(FpDevice *dev,
@@ -699,14 +724,14 @@ void goodix_send_set_powerdown_scan_frequency(FpDevice *dev,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY,
-                         (guint8 *)&payload, sizeof(payload), NULL, TRUE, TRUE,
-                         goodix_receive_success, cb_info);
+                         (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                         GOODIX_TIMEOUT, TRUE, goodix_receive_success, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_SET_POWERDOWN_SCAN_FREQUENCY,
-                       (guint8 *)&payload, sizeof(payload), NULL, TRUE, TRUE,
-                       NULL, NULL);
+                       (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                       GOODIX_TIMEOUT, TRUE, NULL, NULL);
 }
 
 void goodix_send_enable_chip(FpDevice *dev, gboolean enable,
@@ -721,13 +746,14 @@ void goodix_send_enable_chip(FpDevice *dev, gboolean enable,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_ENABLE_CHIP, (guint8 *)&payload,
-                         sizeof(payload), NULL, TRUE, FALSE,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
                          goodix_receive_none, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_ENABLE_CHIP, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, FALSE, NULL, NULL);
+                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE, NULL,
+                       NULL);
 }
 
 void goodix_send_reset(FpDevice *dev, gboolean reset_sensor, guint8 sleep_time,
@@ -746,13 +772,14 @@ void goodix_send_reset(FpDevice *dev, gboolean reset_sensor, guint8 sleep_time,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_RESET, (guint8 *)&payload,
-                         sizeof(payload), NULL, TRUE, TRUE,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
                          goodix_receive_reset, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_RESET, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, TRUE, NULL, NULL);
+                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
+                       NULL);
 }
 
 void goodix_send_firmware_version(FpDevice *dev,
@@ -768,13 +795,14 @@ void goodix_send_firmware_version(FpDevice *dev,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_FIRMWARE_VERSION, (guint8 *)&payload,
-                         sizeof(payload), NULL, TRUE, TRUE,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
                          goodix_receive_firmware_version, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_FIRMWARE_VERSION, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, TRUE, NULL, NULL);
+                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
+                       NULL);
 }
 
 void goodix_send_query_mcu_state(FpDevice *dev, GoodixDefaultCallback callback,
@@ -789,13 +817,14 @@ void goodix_send_query_mcu_state(FpDevice *dev, GoodixDefaultCallback callback,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_QUERY_MCU_STATE, (guint8 *)&payload,
-                         sizeof(payload), NULL, TRUE, TRUE,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
                          goodix_receive_default, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_QUERY_MCU_STATE, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, TRUE, NULL, NULL);
+                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
+                       NULL);
 }
 
 void goodix_send_request_tls_connection(FpDevice *dev,
@@ -811,14 +840,14 @@ void goodix_send_request_tls_connection(FpDevice *dev,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                         (guint8 *)&payload, sizeof(payload), NULL, TRUE, FALSE,
-                         goodix_receive_none, cb_info);
+                         (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                         GOODIX_TIMEOUT, FALSE, goodix_receive_none, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                       (guint8 *)&payload, sizeof(payload), NULL, TRUE, FALSE,
-                       NULL, NULL);
+                       (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                       GOODIX_TIMEOUT, FALSE, NULL, NULL);
 }
 
 void goodix_send_tls_successfully_established(FpDevice *dev,
@@ -834,14 +863,14 @@ void goodix_send_tls_successfully_established(FpDevice *dev,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
-                         (guint8 *)&payload, sizeof(payload), NULL, TRUE, FALSE,
-                         goodix_receive_none, cb_info);
+                         (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                         GOODIX_TIMEOUT, FALSE, goodix_receive_none, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
-                       (guint8 *)&payload, sizeof(payload), NULL, TRUE, FALSE,
-                       NULL, NULL);
+                       (guint8 *)&payload, sizeof(payload), NULL, TRUE,
+                       GOODIX_TIMEOUT, FALSE, NULL, NULL);
 }
 
 void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 address,
@@ -867,14 +896,14 @@ void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 address,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_WRITE_R, payload,
-                         sizeof(payload) + length, g_free, TRUE, TRUE,
-                         goodix_receive_preset_psk_write_r, cb_info);
+                         sizeof(payload) + length, g_free, TRUE, GOODIX_TIMEOUT,
+                         TRUE, goodix_receive_preset_psk_write_r, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_WRITE_R, payload,
-                       sizeof(payload) + length, g_free, TRUE, TRUE, NULL,
-                       NULL);
+                       sizeof(payload) + length, g_free, TRUE, GOODIX_TIMEOUT,
+                       TRUE, NULL, NULL);
 }
 
 void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 address,
@@ -892,13 +921,14 @@ void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 address,
     cb_info->user_data = user_data;
 
     goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_READ_R, (guint8 *)&payload,
-                         sizeof(payload), NULL, TRUE, TRUE,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
                          goodix_receive_preset_psk_read_r, cb_info);
     return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_READ_R, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, TRUE, NULL, NULL);
+                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
+                       NULL);
 }
 
 // ---- GOODIX SEND SECTION END ----
@@ -913,6 +943,7 @@ gboolean goodix_dev_init(FpDevice *dev, GError **error) {
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
 
+  priv->timeout = NULL;
   priv->ack = FALSE;
   priv->reply = FALSE;
   priv->callback = NULL;
@@ -930,6 +961,7 @@ gboolean goodix_dev_deinit(FpDevice *dev, GError **error) {
   FpiDeviceGoodixTlsPrivate *priv =
       fpi_device_goodixtls_get_instance_private(self);
 
+  if (priv->timeout) g_source_destroy(priv->timeout);
   g_free(priv->data);
 
   return g_usb_device_release_interface(fpi_device_get_usb_device(dev),

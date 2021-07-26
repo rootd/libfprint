@@ -89,7 +89,7 @@ static void check_reset(FpDevice *dev, gboolean success, guint16 number,
   }
 
   if (!success) {
-    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_FAILED,
                 "Failed to reset device");
     fpi_ssm_mark_failed(user_data, error);
     return;
@@ -119,7 +119,7 @@ static void check_preset_psk_read_r(FpDevice *dev, gboolean success,
   }
 
   if (!success) {
-    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+    g_set_error(&error, G_IO_ERROR, G_IO_ERROR_FAILED,
                 "Failed to read PSK R from device");
     fpi_ssm_mark_failed(user_data, error);
     return;
@@ -161,7 +161,6 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       // do so.
       goodix_receive_data(dev);
       goodix_send_nop(dev, check_none, ssm);
-      goodix_receive_done(dev, NULL, 0, NULL);
       break;
 
     case ACTIVATE_ENABLE_CHIP:
@@ -170,7 +169,6 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
 
     case ACTIVATE_NOP:
       goodix_send_nop(dev, check_none, ssm);
-      goodix_receive_done(dev, NULL, 0, NULL);
       break;
 
     case ACTIVATE_CHECK_FW_VER:
@@ -187,7 +185,7 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
       break;
 
     case BREAK:
-      g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "Break");
+      g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_CANCELLED, "Break");
       fpi_ssm_mark_failed(ssm, error);
       break;
 
