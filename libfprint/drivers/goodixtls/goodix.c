@@ -190,7 +190,7 @@ void goodix_receive_preset_psk_read_r(FpDevice *dev, guint8 *data,
 
   callback(
       dev, TRUE,
-      GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->address),
+      GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->flags),
       data + sizeof(guint8) + sizeof(GoodixPresetPskR), psk_r_len,
       cb_info->user_data, NULL);
 }
@@ -873,18 +873,17 @@ void goodix_send_tls_successfully_established(FpDevice *dev,
                        GOODIX_TIMEOUT, FALSE, NULL, NULL);
 }
 
-void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 address,
-                                    guint8 *psk_r, guint16 length,
-                                    GDestroyNotify free_func,
+void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 flags, guint8 *psk_r,
+                                    guint16 length, GDestroyNotify free_func,
                                     GoodixSuccessCallback callback,
                                     gpointer user_data) {
-  // Only support one address, one payload and one length
+  // Only support one flags, one payload and one length
 
   guint8 *payload = g_malloc(sizeof(GoodixPresetPskR) + length);
   GoodixPresetPskR *preset_psk_r = (GoodixPresetPskR *)payload;
   GoodixCallbackInfo *cb_info;
 
-  preset_psk_r->address = GUINT32_TO_LE(address);
+  preset_psk_r->flags = GUINT32_TO_LE(flags);
   preset_psk_r->length = GUINT32_TO_LE(length);
   memcpy(payload + sizeof(GoodixPresetPskR), psk_r, length);
   if (free_func) free_func(psk_r);
@@ -906,11 +905,10 @@ void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 address,
                        TRUE, NULL, NULL);
 }
 
-void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 address,
-                                   guint16 length,
+void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 flags, guint16 length,
                                    GoodixPresetPskReadRCallback callback,
                                    gpointer user_data) {
-  GoodixPresetPskR payload = {.address = GUINT32_TO_LE(address),
+  GoodixPresetPskR payload = {.flags = GUINT32_TO_LE(flags),
                               .length = GUINT32_TO_LE(length)};
   GoodixCallbackInfo *cb_info;
 

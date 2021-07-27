@@ -109,7 +109,7 @@ typedef struct __attribute__((__packed__)) _GoodixQueryMcuState {
 } GoodixQueryMcuState;
 
 typedef struct __attribute__((__packed__)) _GoodixPresetPskR {
-  guint32 address;
+  guint32 flags;
   guint32 length;
 } GoodixPresetPskR;
 

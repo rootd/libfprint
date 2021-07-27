@@ -48,7 +48,7 @@ typedef void (*GoodixFirmwareVersionCallback)(FpDevice *dev, gchar *firmware,
                                               GError *error);
 
 typedef void (*GoodixPresetPskReadRCallback)(FpDevice *dev, gboolean success,
-                                             guint32 address, guint8 *psk_r,
+                                             guint32 flags, guint8 *psk_r,
                                              guint16 length, gpointer user_data,
                                              GError *error);
 
@@ -201,14 +201,12 @@ void goodix_send_tls_successfully_established(FpDevice *dev,
                                               GoodixNoneCallback callback,
                                               gpointer user_data);
 
-void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 address,
-                                    guint8 *psk_r, guint16 length,
-                                    GDestroyNotify free_func,
+void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 flags, guint8 *psk_r,
+                                    guint16 length, GDestroyNotify free_func,
                                     GoodixSuccessCallback callback,
                                     gpointer user_data);
 
-void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 address,
-                                   guint16 length,
+void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 flags, guint16 length,
                                    GoodixPresetPskReadRCallback callback,
                                    gpointer user_data);
 
