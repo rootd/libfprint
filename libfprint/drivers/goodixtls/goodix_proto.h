@@ -46,8 +46,8 @@
 #define GOODIX_CMD_ACK (0xb0)
 #define GOODIX_CMD_REQUEST_TLS_CONNECTION (0xd0)
 #define GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED (0xd4)
-#define GOODIX_CMD_PRESET_PSK_WRITE_R (0xe0)
-#define GOODIX_CMD_PRESET_PSK_READ_R (0xe4)
+#define GOODIX_CMD_PRESET_PSK_WRITE (0xe0)
+#define GOODIX_CMD_PRESET_PSK_READ (0xe4)
 
 typedef struct __attribute__((__packed__)) _GoodixPack {
   guint8 flags;
@@ -108,10 +108,10 @@ typedef struct __attribute__((__packed__)) _GoodixQueryMcuState {
   guint8 unused_flags;
 } GoodixQueryMcuState;
 
-typedef struct __attribute__((__packed__)) _GoodixPresetPskR {
+typedef struct __attribute__((__packed__)) _GoodixPresetPsk {
   guint32 flags;
   guint32 length;
-} GoodixPresetPskR;
+} GoodixPresetPsk;
 
 typedef struct __attribute__((__packed__)) _GoodixDefault {
   guint8 unused_flags;

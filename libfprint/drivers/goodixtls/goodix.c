@@ -146,13 +146,12 @@ void goodix_receive_reset(FpDevice *dev, guint8 *data, guint16 length,
            cb_info->user_data, NULL);
 }
 
-void goodix_receive_preset_psk_read_r(FpDevice *dev, guint8 *data,
-                                      guint16 length, gpointer user_data,
-                                      GError *error) {
-  guint32 psk_r_len;
+void goodix_receive_preset_psk_read(FpDevice *dev, guint8 *data, guint16 length,
+                                    gpointer user_data, GError *error) {
+  guint32 psk_len;
   g_autofree GoodixCallbackInfo *cb_info = user_data;
-  GoodixPresetPskReadRCallback callback =
-      (GoodixPresetPskReadRCallback)cb_info->callback;
+  GoodixPresetPskReadCallback callback =
+      (GoodixPresetPskReadCallback)cb_info->callback;
 
   if (error) {
     callback(dev, FALSE, 0x00000000, NULL, 0, cb_info->user_data, error);
@@ -161,7 +160,7 @@ void goodix_receive_preset_psk_read_r(FpDevice *dev, guint8 *data,
 
   if (length < sizeof(guint8)) {
     g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid preset PSK read R reply length: %d", length);
+                "Invalid preset PSK read reply length: %d", length);
     callback(dev, FALSE, 0x00000000, NULL, 0, cb_info->user_data, error);
     return;
   }
@@ -171,33 +170,32 @@ void goodix_receive_preset_psk_read_r(FpDevice *dev, guint8 *data,
     return;
   }
 
-  if (length < sizeof(guint8) + sizeof(GoodixPresetPskR)) {
+  if (length < sizeof(guint8) + sizeof(GoodixPresetPsk)) {
     g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid preset PSK read R reply length: %d", length);
+                "Invalid preset PSK read reply length: %d", length);
     callback(dev, FALSE, 0x00000000, NULL, 0, cb_info->user_data, error);
     return;
   }
 
-  psk_r_len =
-      GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->length);
+  psk_len =
+      GUINT32_FROM_LE(((GoodixPresetPsk *)(data + sizeof(guint8)))->length);
 
-  if (length < psk_r_len + sizeof(guint8) + sizeof(GoodixPresetPskR)) {
+  if (length < psk_len + sizeof(guint8) + sizeof(GoodixPresetPsk)) {
     g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid preset PSK read R reply length: %d", length);
+                "Invalid preset PSK read reply length: %d", length);
     callback(dev, FALSE, 0x00000000, NULL, 0, cb_info->user_data, error);
     return;
   }
 
-  callback(
-      dev, TRUE,
-      GUINT32_FROM_LE(((GoodixPresetPskR *)(data + sizeof(guint8)))->flags),
-      data + sizeof(guint8) + sizeof(GoodixPresetPskR), psk_r_len,
-      cb_info->user_data, NULL);
+  callback(dev, TRUE,
+           GUINT32_FROM_LE(((GoodixPresetPsk *)(data + sizeof(guint8)))->flags),
+           data + sizeof(guint8) + sizeof(GoodixPresetPsk), psk_len,
+           cb_info->user_data, NULL);
 }
 
-void goodix_receive_preset_psk_write_r(FpDevice *dev, guint8 *data,
-                                       guint16 length, gpointer user_data,
-                                       GError *error) {
+void goodix_receive_preset_psk_write(FpDevice *dev, guint8 *data,
+                                     guint16 length, gpointer user_data,
+                                     GError *error) {
   g_autofree GoodixCallbackInfo *cb_info = user_data;
   GoodixSuccessCallback callback = (GoodixSuccessCallback)cb_info->callback;
 
@@ -208,7 +206,7 @@ void goodix_receive_preset_psk_write_r(FpDevice *dev, guint8 *data,
 
   if (length < sizeof(guint8)) {
     g_set_error(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                "Invalid preset PSK write R reply length: %d", length);
+                "Invalid preset PSK write reply length: %d", length);
     callback(dev, FALSE, cb_info->user_data, error);
     return;
   }
@@ -873,20 +871,20 @@ void goodix_send_tls_successfully_established(FpDevice *dev,
                        GOODIX_TIMEOUT, FALSE, NULL, NULL);
 }
 
-void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 flags, guint8 *psk_r,
-                                    guint16 length, GDestroyNotify free_func,
-                                    GoodixSuccessCallback callback,
-                                    gpointer user_data) {
+void goodix_send_preset_psk_write(FpDevice *dev, guint32 flags, guint8 *psk,
+                                  guint16 length, GDestroyNotify free_func,
+                                  GoodixSuccessCallback callback,
+                                  gpointer user_data) {
   // Only support one flags, one payload and one length
 
-  guint8 *payload = g_malloc(sizeof(GoodixPresetPskR) + length);
-  GoodixPresetPskR *preset_psk_r = (GoodixPresetPskR *)payload;
+  guint8 *payload = g_malloc(sizeof(GoodixPresetPsk) + length);
+  GoodixPresetPsk *preset_psk = (GoodixPresetPsk *)payload;
   GoodixCallbackInfo *cb_info;
 
-  preset_psk_r->flags = GUINT32_TO_LE(flags);
-  preset_psk_r->length = GUINT32_TO_LE(length);
-  memcpy(payload + sizeof(GoodixPresetPskR), psk_r, length);
-  if (free_func) free_func(psk_r);
+  preset_psk->flags = GUINT32_TO_LE(flags);
+  preset_psk->length = GUINT32_TO_LE(length);
+  memcpy(payload + sizeof(GoodixPresetPsk), psk, length);
+  if (free_func) free_func(psk);
 
   if (callback) {
     cb_info = malloc(sizeof(GoodixCallbackInfo));
@@ -894,22 +892,22 @@ void goodix_send_preset_psk_write_r(FpDevice *dev, guint32 flags, guint8 *psk_r,
     cb_info->callback = G_CALLBACK(callback);
     cb_info->user_data = user_data;
 
-    goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_WRITE_R, payload,
+    goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_WRITE, payload,
                          sizeof(payload) + length, g_free, TRUE, GOODIX_TIMEOUT,
-                         TRUE, goodix_receive_preset_psk_write_r, cb_info);
+                         TRUE, goodix_receive_preset_psk_write, cb_info);
     return;
   }
 
-  goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_WRITE_R, payload,
+  goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_WRITE, payload,
                        sizeof(payload) + length, g_free, TRUE, GOODIX_TIMEOUT,
                        TRUE, NULL, NULL);
 }
 
-void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 flags, guint16 length,
-                                   GoodixPresetPskReadRCallback callback,
-                                   gpointer user_data) {
-  GoodixPresetPskR payload = {.flags = GUINT32_TO_LE(flags),
-                              .length = GUINT32_TO_LE(length)};
+void goodix_send_preset_psk_read(FpDevice *dev, guint32 flags, guint16 length,
+                                 GoodixPresetPskReadCallback callback,
+                                 gpointer user_data) {
+  GoodixPresetPsk payload = {.flags = GUINT32_TO_LE(flags),
+                             .length = GUINT32_TO_LE(length)};
   GoodixCallbackInfo *cb_info;
 
   if (callback) {
@@ -918,13 +916,13 @@ void goodix_send_preset_psk_read_r(FpDevice *dev, guint32 flags, guint16 length,
     cb_info->callback = G_CALLBACK(callback);
     cb_info->user_data = user_data;
 
-    goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_READ_R, (guint8 *)&payload,
+    goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *)&payload,
                          sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-                         goodix_receive_preset_psk_read_r, cb_info);
+                         goodix_receive_preset_psk_read, cb_info);
     return;
   }
 
-  goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_READ_R, (guint8 *)&payload,
+  goodix_send_protocol(dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *)&payload,
                        sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
                        NULL);
 }
