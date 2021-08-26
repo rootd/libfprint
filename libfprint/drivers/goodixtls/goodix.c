@@ -17,6 +17,7 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
+#include "fpi-usb-transfer.h"
 #define FP_COMPONENT "goodixtls"
 
 #include <gio/gio.h>
@@ -397,24 +398,26 @@ void goodix_receive_data(FpDevice *dev) {
 gboolean goodix_send_data(FpDevice *dev, guint8 *data, guint32 length,
                           GDestroyNotify free_func, GError **error) {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
-  FpiUsbTransfer *transfer = fpi_usb_transfer_new(dev);
-
-  transfer->short_is_error = TRUE;
+  FpiDeviceGoodixTlsClass* class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
 
   for (guint32 i = 0; i < length; i += GOODIX_EP_OUT_MAX_BUF_SIZE) {
-    fpi_usb_transfer_fill_bulk_full(transfer, class->ep_out, data + i,
-                                    GOODIX_EP_OUT_MAX_BUF_SIZE, NULL);
+      FpiUsbTransfer* transfer = fpi_usb_transfer_new(dev);
+      transfer->short_is_error = TRUE;
 
-    if (!fpi_usb_transfer_submit_sync(transfer, GOODIX_TIMEOUT, error)) {
-      if (free_func) free_func(data);
+      fpi_usb_transfer_fill_bulk_full(transfer, class->ep_out, data + i,
+                                      GOODIX_EP_OUT_MAX_BUF_SIZE, NULL);
+
+      if (!fpi_usb_transfer_submit_sync(transfer, GOODIX_TIMEOUT, error)) {
+          if (free_func)
+              free_func(data);
+          fpi_usb_transfer_unref(transfer);
+          return FALSE;
+      }
       fpi_usb_transfer_unref(transfer);
-      return FALSE;
-    }
   }
 
-  if (free_func) free_func(data);
-  fpi_usb_transfer_unref(transfer);
+  if (free_func)
+      free_func(data);
   return TRUE;
 }
 
@@ -494,26 +497,27 @@ void goodix_send_nop(FpDevice *dev, GoodixNoneCallback callback,
   goodix_receive_done(dev, NULL, 0, NULL);
 }
 
-void goodix_send_mcu_get_image(FpDevice *dev, GoodixNoneCallback callback,
-                               gpointer user_data) {
-  GoodixDefault payload = {.unused_flags = 0x01};
-  GoodixCallbackInfo *cb_info;
+void goodix_send_mcu_get_image(FpDevice* dev, GoodixNoneCallback callback,
+                               gpointer user_data)
+{
+    GoodixDefault payload = {.unused_flags = 0x01};
+    GoodixCallbackInfo* cb_info;
 
-  if (callback) {
-    cb_info = malloc(sizeof(GoodixCallbackInfo));
+    if (callback) {
+        cb_info = malloc(sizeof(GoodixCallbackInfo));
 
-    cb_info->callback = G_CALLBACK(callback);
-    cb_info->user_data = user_data;
+        cb_info->callback = G_CALLBACK(callback);
+        cb_info->user_data = user_data;
 
-    goodix_send_protocol(dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8 *)&payload,
+        goodix_send_protocol(dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8*) &payload,
+                             sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
+                             goodix_receive_none, cb_info);
+        return;
+    }
+
+    goodix_send_protocol(dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8*) &payload,
                          sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
-                         goodix_receive_none, cb_info);
-    return;
-  }
-
-  goodix_send_protocol(dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8 *)&payload,
-                       sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE, NULL,
-                       NULL);
+                         NULL, NULL);
 }
 
 void goodix_send_mcu_switch_to_fdt_down(FpDevice *dev, guint8 *mode,
