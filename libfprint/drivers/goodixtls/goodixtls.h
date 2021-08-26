@@ -30,23 +30,22 @@ static const guint8 goodix_511_psk_0[] = {
     0x49, 0x55, 0xbd, 0x69, 0xa9, 0xa9, 0x86, 0x1d, 0x9e, 0x91, 0x1f,
     0xa2, 0x49, 0x85, 0xb6, 0x77, 0xe8, 0xdb, 0xd7, 0x2d, 0x43};
 
-typedef void (*GoodixTlsServerSendCallback)(GoodixTlsServer* self, guint8* data,
-                                            guint16 length);
+struct _GoodixTlsServer;
 
-typedef void (*GoodixTlsServerConnectionCallback)(GoodixTlsServer* self,
+typedef void (*GoodixTlsServerSendCallback)(struct _GoodixTlsServer* self,
+                                            guint8* data, guint16 length);
+
+typedef void (*GoodixTlsServerConnectionCallback)(struct _GoodixTlsServer* self,
                                                   GError* error);
 
-typedef void (*GoodixTlsServerDecodedCallback)(GoodixTlsServer* self,
+typedef void (*GoodixTlsServerDecodedCallback)(struct _GoodixTlsServer* self,
                                                guint8* data, gsize length,
                                                GError* error);
 
-enum goodix_tls_serve_state {
-    GOODIX_TLS_STATE_CONNECT,
-};
 typedef struct _GoodixTlsServer {
     // This callback should be called when a TLS packet must be send to the
     // device
-    GoodixTlsServerSendCallback send_callback;
+    // GoodixTlsServerSendCallback send_callback;
 
     // This callback should be called when the connection is established. The
     // error should be NULL. It can also be called when the connection fail. In
@@ -57,7 +56,7 @@ typedef struct _GoodixTlsServer {
     // should be NULL.
     // It can also be called when the server fail to decode a packet. In this
     // case, the error should not be NULL.
-    GoodixTlsServerDecodedCallback decoded_callback;
+    // GoodixTlsServerDecodedCallback decoded_callback;
 
     // Put what you need here.
     SSL_CTX* ssl_ctx;
