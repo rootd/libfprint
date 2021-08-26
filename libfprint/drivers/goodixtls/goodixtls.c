@@ -30,12 +30,9 @@
 #include <sys/socket.h>
 
 #include "drivers_api.h"
+#include "fp-device.h"
+#include "fpi-device.h"
 #include "goodixtls.h"
-
-int sock;
-FpiSsm *fpi_ssm;
-pthread_t server;
-SSL_CTX *ctx;
 
 static unsigned int tls_server_psk_server_callback(SSL *ssl,
                                                    const char *identity,
@@ -51,63 +48,54 @@ static unsigned int tls_server_psk_server_callback(SSL *ssl,
   return sizeof(goodix_511_psk_0);
 }
 
-int tls_server_create_socket(int port) {
-  int s;
-  struct sockaddr_in addr;
+static int tls_server_create_socket(int port)
+{
+    int s;
+    struct sockaddr_in addr;
 
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-  s = socket(AF_INET, SOCK_STREAM, 0);
-  if (s < 0) {
-    fp_dbg("Unable to create TLS server socket");
-    fpi_ssm_mark_failed(fpi_ssm, fpi_device_error_new_msg(
-                                     FP_DEVICE_ERROR_GENERAL,
-                                     "Unable to create TLS server socket"));
-    return -1;
-  }
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        return -1;
+    }
 
-  if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-    fp_dbg("Unable to bind to TLS server socket");
-    fpi_ssm_mark_failed(fpi_ssm, fpi_device_error_new_msg(
-                                     FP_DEVICE_ERROR_GENERAL,
-                                     "Unable to bind to TLS server socket"));
-    return -1;
-  }
+    if (bind(s, (struct sockaddr*) &addr, sizeof(addr)) < 0) {
+        return -1;
+    }
 
-  if (listen(s, 1) < 0) {
-    fp_dbg("Unable to listen to TLS server socket");
-    fpi_ssm_mark_failed(fpi_ssm, fpi_device_error_new_msg(
-                                     FP_DEVICE_ERROR_GENERAL,
-                                     "Unable to listen to TLS server socket"));
-    return -1;
-  }
+    if (listen(s, 1) < 0) {
+        return -1;
+    }
 
-  return s;
+    return s;
 }
 
-SSL_CTX *tls_server_create_ctx(void) {
-  const SSL_METHOD *method;
+static SSL_CTX* tls_server_create_ctx(void)
+{
+    const SSL_METHOD* method;
 
-  method = SSLv23_server_method();
+    method = SSLv23_server_method();
 
-  ctx = SSL_CTX_new(method);
-  if (!ctx) {
-    return NULL;
-  }
+    SSL_CTX* ctx = SSL_CTX_new(method);
+    if (!ctx) {
+        return NULL;
+    }
 
-  return ctx;
+    return ctx;
 }
 
-void tls_server_config_ctx(void) {
-  SSL_CTX_set_ecdh_auto(ctx, 1);
-  SSL_CTX_set_dh_auto(ctx, 1);
-  SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
-  SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
-  SSL_CTX_set_cipher_list(ctx, "ALL");
+static void tls_server_config_ctx(SSL_CTX* ctx)
+{
+    SSL_CTX_set_ecdh_auto(ctx, 1);
+    SSL_CTX_set_dh_auto(ctx, 1);
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+    SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
+    SSL_CTX_set_cipher_list(ctx, "ALL");
 
-  SSL_CTX_set_psk_server_callback(ctx, tls_server_psk_server_callback);
+    SSL_CTX_set_psk_server_callback(ctx, tls_server_psk_server_callback);
 }
 
 void *tls_server_loop(void *arg) {
@@ -142,71 +130,100 @@ void *tls_server_loop(void *arg) {
   }
 }
 
-void tls_server_stop(void) {
-  close(sock);
-  SSL_CTX_free(ctx);
-}
+static gboolean goodix_tls_connect(GoodixTlsServer* self)
+{
+    struct sockaddr_in addr;
+    guint len = sizeof(addr);
 
-void *tls_server_handshake_loop(void *arg) {
-  struct sockaddr_in addr;
-  guint len = sizeof(addr);
-  SSL *ssl;
-
-  int client = accept(sock, (struct sockaddr *)&addr, &len);
-  if (client < 0) {
-    printf("%s\n", strerror(errno));
-    fp_dbg("TLS server unable to accept socket request");
-  } else {
-    ssl = SSL_new(ctx);
-    SSL_set_fd(ssl, client);
-
-    if (SSL_accept(ssl) <= 0) {
-      printf("%s\n", strerror(errno));
-      fp_dbg("TLS server unable to accept handshake request");
+    int client_fd = accept(self->sock_fd, (struct sockaddr*) &addr, &len);
+    if (client_fd >= 0) {
     }
-  }
-  return 0;
+
+    GError err;
+    err.code = errno;
+    err.message = strerror(errno);
+    self->connection_callback(self, &err);
+    return FALSE;
+}
+static void goodix_tls_send_handshake(GoodixTlsServer* self)
+{
+    const char reply[] = "Hello Goodix\n";
+    SSL_write(self->ssl_layer, reply, strlen(reply));
 }
 
-void tls_server_handshake_init(void) {
-  int err = pthread_create(&server, NULL, &tls_server_handshake_loop, NULL);
-  if (err != 0) {
-    fp_dbg("Unable to create TLS server thread");
-    fpi_ssm_mark_failed(fpi_ssm, fpi_device_error_new_msg(
-                                     FP_DEVICE_ERROR_GENERAL,
-                                     "Unable to create TLS server thread"));
-  } else {
-    fp_dbg("TLS server thread created");
-    fpi_ssm_next_state(fpi_ssm);
-  }
+void goodix_tls_server_send(GoodixTlsServer* self, guint8* data, guint16 length)
+{
+    SSL_write(self->ssl_layer, data, length * sizeof(guint8));
+}
+void goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
+                               guint16 length)
+{
+    SSL_read(self->serve_ssl, data, length * sizeof(guint8));
 }
 
-void tls_server_init(FpiSsm *ssm) {
-  fpi_ssm = ssm;
+static void* goodix_tls_init_cli(void* me)
+{
+    GoodixTlsServer* self = me;
+    self->ssl_layer = SSL_new(self->ssl_ctx);
+    SSL_set_fd(self->ssl_layer, self->client_fd);
+    if (SSL_connect(self->ssl_layer) > 0) {
+        self->connection_callback(self, NULL);
+    }
+    else {
+        printf("failed to connect: %s", strerror(errno));
+    }
+    return NULL;
+}
+static void* goodix_tls_init_serve(void* me)
+{
+    GoodixTlsServer* self = me;
+    self->serve_ssl = SSL_new(self->ssl_ctx);
+    SSL_set_fd(self->serve_ssl, self->sock_fd);
+    if (SSL_accept(self->serve_ssl) != 0) {
+        printf("failed to accept: %s", strerror(errno));
+    }
+    return NULL;
+}
 
-  SSL_load_error_strings();
-  OpenSSL_add_ssl_algorithms();
+gboolean goodix_tls_server_deinit(GoodixTlsServer* self, GError** error)
+{
+    SSL_shutdown(self->ssl_layer);
+    SSL_free(self->ssl_layer);
 
-  ctx = tls_server_create_ctx();
+    SSL_shutdown(self->serve_ssl);
+    SSL_free(self->serve_ssl);
 
-  if (ctx == NULL) {
-    fp_dbg("Unable to create TLS server context");
-    fpi_ssm_mark_failed(
-        ssm, fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL,
-                                      "Unable to create TLS server context"));
-    return;
-  }
+    close(self->client_fd);
+    close(self->sock_fd);
 
-  tls_server_config_ctx();
+    SSL_CTX_free(self->ssl_ctx);
 
-  sock = tls_server_create_socket(GOODIX_TLS_SERVER_PORT);
-  if (sock == -1) {
-    fp_dbg("Unable to create TLS server socket");
-    fpi_ssm_mark_failed(
-        ssm, fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL,
-                                      "Unable to create TLS server context"));
-    return;
-  }
+    return TRUE;
+}
 
-  fpi_ssm_next_state(ssm);
+gboolean goodix_tls_server_init(GoodixTlsServer* self, guint8* psk,
+                                gsize length, GError** error)
+{
+    g_assert(self->decoded_callback);
+    g_assert(self->connection_callback);
+    g_assert(self->send_callback);
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
+    self->ssl_ctx = tls_server_create_ctx();
+
+    int socks[2] = {0, 0};
+    socketpair(AF_INET, SOCK_STREAM, 0, socks);
+    self->sock_fd = socks[0];
+    self->client_fd = socks[1];
+
+    if (self->ssl_ctx == NULL) {
+        fp_dbg("Unable to create TLS server context");
+        *error = fpi_device_error_new_msg(FP_DEVICE_ERROR_GENERAL, "Unable to "
+                                                                   "create TLS "
+                                                                   "server "
+                                                                   "context");
+        return FALSE;
+    }
+    pthread_create(&self->cli_thread, 0, goodix_tls_init_cli, self);
+    pthread_create(&self->serve_thread, 0, goodix_tls_init_serve, self);
 }
