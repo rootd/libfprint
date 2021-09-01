@@ -192,8 +192,8 @@ void goodix_send_firmware_version(FpDevice *dev,
 void goodix_send_query_mcu_state(FpDevice *dev, GoodixDefaultCallback callback,
                                  gpointer user_data);
 
-void goodix_send_request_tls_connection(FpDevice *dev,
-                                        GoodixNoneCallback callback,
+void goodix_send_request_tls_connection(FpDevice* dev,
+                                        GoodixDefaultCallback callback,
                                         gpointer user_data);
 
 void goodix_send_tls_successfully_established(FpDevice *dev,

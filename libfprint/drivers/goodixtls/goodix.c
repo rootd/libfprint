@@ -34,22 +34,20 @@
 #include "goodixtls.h"
 
 typedef struct {
-  pthread_t tls_server_thread;
-  gint tls_server_sock;
-  SSL_CTX *tls_server_ctx;
+    GoodixTlsServer* tls_hop;
 
-  GSource *timeout;
+    GSource* timeout;
 
-  guint8 cmd;
+    guint8 cmd;
 
-  gboolean ack;
-  gboolean reply;
+    gboolean ack;
+    gboolean reply;
 
-  GoodixCmdCallback callback;
-  gpointer user_data;
+    GoodixCmdCallback callback;
+    gpointer user_data;
 
-  guint8 *data;
-  guint32 length;
+    guint8* data;
+    guint32 length;
 } FpiDeviceGoodixTlsPrivate;
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(FpiDeviceGoodixTls, fpi_device_goodixtls,
@@ -270,8 +268,9 @@ void goodix_receive_ack(FpDevice *dev, guint8 *data, guint16 length,
   }
 
   if (!priv->reply) {
-    goodix_receive_done(dev, NULL, 0, NULL);
-    return;
+      G_DEBUG_HERE();
+      goodix_receive_done(dev, NULL, 0, NULL);
+      return;
   }
 
   priv->ack = FALSE;
@@ -293,8 +292,9 @@ void goodix_receive_protocol(FpDevice *dev, guint8 *data, guint32 length) {
     return;
 
   if (cmd == GOODIX_CMD_ACK) {
-    goodix_receive_ack(dev, payload, payload_len, NULL, NULL);
-    return;
+      fp_dbg("got ack");
+      goodix_receive_ack(dev, payload, payload_len, NULL, NULL);
+      return;
   }
 
   if (priv->cmd != cmd) {
@@ -332,13 +332,17 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
 
   switch (flags) {
     case GOODIX_FLAGS_MSG_PROTOCOL:
-      goodix_receive_protocol(dev, payload, payload_len);
-      break;
+        fp_dbg("Got protocol msg");
+        goodix_receive_protocol(dev, payload, payload_len);
+        break;
 
     case GOODIX_FLAGS_TLS:
-      // TLS message sending it to TLS server.
-      // TODO
-      break;
+        fp_dbg("Got TLS msg");
+        goodix_receive_done(dev, data, length, NULL);
+
+        // TLS message sending it to TLS server.
+        // TODO
+        break;
 
     default:
       fp_warn("Unknown flags: 0x%02x", flags);
@@ -829,27 +833,29 @@ void goodix_send_query_mcu_state(FpDevice *dev, GoodixDefaultCallback callback,
                        NULL);
 }
 
-void goodix_send_request_tls_connection(FpDevice *dev,
-                                        GoodixNoneCallback callback,
-                                        gpointer user_data) {
-  GoodixNone payload = {};
-  GoodixCallbackInfo *cb_info;
+void goodix_send_request_tls_connection(FpDevice* dev,
+                                        GoodixDefaultCallback callback,
+                                        gpointer user_data)
+{
+    GoodixNone payload = {};
+    GoodixCallbackInfo* cb_info;
 
-  if (callback) {
-    cb_info = malloc(sizeof(GoodixCallbackInfo));
+    if (callback) {
+        cb_info = malloc(sizeof(GoodixCallbackInfo));
 
-    cb_info->callback = G_CALLBACK(callback);
-    cb_info->user_data = user_data;
+        cb_info->callback = G_CALLBACK(callback);
+        cb_info->user_data = user_data;
+
+        goodix_send_protocol(dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
+                             (guint8*) &payload, sizeof(payload), NULL, TRUE,
+                             GOODIX_TIMEOUT, TRUE, goodix_receive_default,
+                             cb_info);
+        return;
+    }
 
     goodix_send_protocol(dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                         (guint8 *)&payload, sizeof(payload), NULL, TRUE,
-                         GOODIX_TIMEOUT, FALSE, goodix_receive_none, cb_info);
-    return;
-  }
-
-  goodix_send_protocol(dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                       (guint8 *)&payload, sizeof(payload), NULL, TRUE,
-                       GOODIX_TIMEOUT, FALSE, NULL, NULL);
+                         (guint8*) &payload, sizeof(payload), NULL, TRUE,
+                         GOODIX_TIMEOUT, TRUE, NULL, NULL);
 }
 
 void goodix_send_tls_successfully_established(FpDevice *dev,
@@ -980,16 +986,76 @@ enum tls_states {
   TLS_NUM_STATES,
 };
 
-void goodix_tls_run_state(FpiSsm *ssm, FpDevice *dev) {
-  switch (fpi_ssm_get_cur_state(ssm)) {
-    case TLS_SERVER_INIT:
-      tls_server_init(ssm);
-      break;
+static void on_goodix_tls_server_ready(GoodixTlsServer* server, GError* err,
+                                       gpointer dev)
+{
+    if (err) {
+        fp_err("server ready failed: %s", err->message);
+        return;
+    }
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+    guint8 buff[1024];
+    int got =
+        goodix_tls_server_receive(priv->tls_hop, buff, sizeof(buff), &err);
+    if (got <= 0) {
+        fp_err("failed to read ssl stream: %s (code: %d)", err->message,
+               err->code);
+        return;
+    }
+    fp_dbg("GOT, len: %d, %s", got, data_to_str(buff, got));
+    // guint8 buff[1024];
+    // int qty = goodix_tls_server_receive(priv->tls_hop, buff, sizeof(buff));
+    // goodix_send_data(FP_DEVICE(dev), buff, qty, NULL, &err);
+    //  goodix_tls_server_receive(priv->tls_hop, buff, sizeof(buff));
+    // goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
+}
 
-    case TLS_SERVER_HANDSHAKE_INIT:
-      tls_server_handshake_init();
-      break;
-  }
+static void on_goodix_request_tls_connection(FpDevice* dev, guint8* data,
+                                             guint16 length, gpointer user_data,
+                                             GError* error)
+{
+    if (error) {
+        fp_err("failed to get tls handshake: %s", error->message);
+        goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
+        return;
+    }
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(user_data);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+    GError* err = NULL;
+    /*if (!goodix_tls_init_cli(priv->tls_hop, &err)) {
+        fp_err("failed to init tls cli: %s", err->message);
+        goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
+        return;
+    }*/
+    fp_dbg("len: %d, d: %s", length, data_to_str(data, length));
+    // goodix_send_tls_successfully_established(dev, NULL, NULL);
+    goodix_tls_client_send(priv->tls_hop, data, length);
+    goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
+    /*guint8 buff[1024];
+    goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
+    int got =
+        goodix_tls_server_receive(priv->tls_hop, buff, sizeof(buff), &err);
+    if (got <= 0) {
+        fp_err("failed to read ssl stream: %s (code: %d)", err->message,
+               err->code);
+        return;
+    }
+    fp_dbg("GOT, len: %d, %s", got, data_to_str(buff, got));*/
+}
+
+static void goodix_tls_ready(GoodixTlsServer* server, GError* err, gpointer dev)
+{
+    if (err) {
+        fp_err("failed to init tls server: %s, code: %d", err->message,
+               err->code);
+        return;
+    }
+    fp_dbg("Inited tls server");
+    goodix_send_request_tls_connection(FP_DEVICE(dev),
+                                       on_goodix_request_tls_connection, dev);
 }
 
 void goodix_tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error) {
@@ -997,8 +1063,26 @@ void goodix_tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error) {
 }
 
 void goodix_tls(FpDevice *dev) {
-  fpi_ssm_start(fpi_ssm_new(dev, goodix_tls_run_state, TLS_NUM_STATES),
-                goodix_tls_complete);
+    fp_dbg("Starting up goodix tls server");
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+    g_assert(priv->tls_hop == NULL);
+    priv->tls_hop = malloc(sizeof(GoodixTlsServer));
+    GoodixTlsServer* s = priv->tls_hop;
+    s->connection_callback = on_goodix_tls_server_ready;
+    s->user_data = self;
+    GError* err = NULL;
+    if (!goodix_tls_server_init(priv->tls_hop, &err)) {
+        fp_err("failed to init tls server, error: %s, code: %d", err->message,
+               err->code);
+        return;
+    }
+    /*if (!goodix_tls_init_cli(s, &err)) {
+      fp_err("failed to init client: %s, code: %d", err->message, err->code);
+      return;
+    }*/
+    goodix_tls_ready(s, err, self);
 }
 
 // ---- TLS SECTION END ----
