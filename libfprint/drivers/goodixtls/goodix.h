@@ -65,6 +65,7 @@ typedef void (*GoodixNoneCallback)(FpDevice *dev, gpointer user_data,
 typedef void (*GoodixDefaultCallback)(FpDevice *dev, guint8 *data,
                                       guint16 length, gpointer user_data,
                                       GError *error);
+typedef GoodixDefaultCallback GoodixTlsCallback;
 
 gchar *data_to_str(guint8 *data, guint32 length);
 
@@ -225,9 +226,10 @@ gboolean goodix_dev_deinit(FpDevice *dev, GError **error);
 
 // ---- TLS SECTION START ----
 
-void goodix_send_tls()
+void goodix_read_tls(FpDevice* dev, GoodixTlsCallback callback,
+                     gpointer user_data);
 
-void goodix_tls_run_state(FpiSsm *ssm, FpDevice *dev);
+void goodix_tls_run_state(FpiSsm* ssm, FpDevice* dev);
 
 void goodix_tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
 

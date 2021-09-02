@@ -205,8 +205,8 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
            run and you get a timeout when trying to rerun */
         // goodix_send_tls_successfully_established(dev, NULL, NULL);
         // exit(0);
-        //     Nop seems to clear the previous command buffer. But we are unable
-        //     to do so.
+        //           Nop seems to clear the previous command buffer. But we are
+        //           unable to do so.
         goodix_receive_data(dev);
         goodix_send_nop(dev, check_none, ssm);
         break;

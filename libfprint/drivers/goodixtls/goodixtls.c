@@ -37,18 +37,14 @@
 #include "glibconfig.h"
 #include "goodixtls.h"
 
-static GError* err_from_ssl(int code)
+static GError* err_from_ssl()
 {
-    BIO* b = BIO_new(BIO_s_mem());
-    ERR_print_errors(b);
-    char* buff;
-    size_t len = BIO_get_mem_data(b, &buff);
     GError* err = malloc(sizeof(GError));
+    unsigned long code = ERR_get_error();
     err->code = code;
-    char* msg = malloc(len);
-    memcpy(msg, buff, len);
-    err->message = msg;
-    BIO_free(b);
+    const char* msg = ERR_reason_error_string(code);
+    err->message = malloc(strlen(msg));
+    strcpy(err->message, msg);
     return err;
 }
 
@@ -60,6 +56,7 @@ static unsigned int tls_server_psk_server_callback(SSL *ssl,
     fp_dbg("Provided PSK R is too long for OpenSSL");
     return 0;
   }
+  fp_dbg("PSK WANTED");
 
   psk = (unsigned char *)&goodix_511_psk_0;
 
@@ -116,8 +113,8 @@ static void tls_server_config_ctx(SSL_CTX* ctx)
     SSL_CTX_set_ecdh_auto(ctx, 1);
     SSL_CTX_set_dh_auto(ctx, 1);
     SSL_CTX_set_cipher_list(ctx, "ALL");
-    // SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
-    // SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+    SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
     // SSL_CTX_set_cipher_list(ctx, "ALL");
     SSL_CTX_set_psk_server_callback(ctx, tls_server_psk_server_callback);
 }
@@ -164,7 +161,8 @@ int goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
     fp_dbg("READ START");
     int retr = SSL_read(self->ssl_layer, data, length * sizeof(guint8));
     if (retr <= 0) {
-        *error = err_from_ssl(retr);
+        g_set_error(error, g_io_channel_error_quark(), retr,
+                    ""); // err_from_ssl(retr);
     }
     fp_dbg("READ END");
     return retr;
@@ -192,7 +190,7 @@ gboolean goodix_tls_init_cli(GoodixTlsServer* self, GError** error)
     }
 
     if (retr <= 0) {
-        *error = err_from_ssl(retr);
+        //*error = err_from_ssl(retr);
     }
     // SSL_free(ssl_layer);
     // SSL_CTX_free(ctx);
@@ -210,9 +208,7 @@ static void* goodix_tls_init_serve(void* me)
     int retr = SSL_accept(self->ssl_layer);
     fp_dbg("TLS server accept done");
     if (retr <= 0) {
-        self->connection_callback(
-            self, err_from_ssl(SSL_get_error(self->ssl_layer, retr)),
-            self->user_data);
+        self->connection_callback(self, err_from_ssl(), self->user_data);
     }
     else {
         g_assert(self->connection_callback);
