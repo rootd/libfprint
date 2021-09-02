@@ -370,9 +370,7 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
 
     case GOODIX_FLAGS_TLS:
         fp_dbg("Got TLS msg");
-        // goodix_receive_done(dev, data, length, NULL);
         goodix_receive_done(dev, payload, payload_len, NULL);
-        // goodix_receive_tls(dev, payload, priv->length);
 
         // TLS message sending it to TLS server.
         // TODO
@@ -1045,11 +1043,6 @@ static void on_goodix_tls_server_ready(GoodixTlsServer* server, GError* err,
     FpiDeviceGoodixTlsPrivate* priv =
         fpi_device_goodixtls_get_instance_private(self);
     fp_dbg("TLS connection ready");
-    // guint8 buff[1024];
-    // int qty = goodix_tls_server_receive(priv->tls_hop, buff, sizeof(buff));
-    // goodix_send_data(FP_DEVICE(dev), buff, qty, NULL, &err);
-    //  goodix_tls_server_receive(priv->tls_hop, buff, sizeof(buff));
-    // goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
 }
 typedef struct _goodix_tls_handshake_state {
     int count;
@@ -1127,13 +1120,8 @@ static void on_goodix_request_tls_connection(FpDevice* dev, guint8* data,
     FpiDeviceGoodixTlsPrivate* priv =
         fpi_device_goodixtls_get_instance_private(self);
     GError* err = NULL;
-    /*if (!goodix_tls_init_cli(priv->tls_hop, &err)) {
-        fp_err("failed to init tls cli: %s", err->message);
-        goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
-        return;
-    }*/
+
     fp_dbg("len: %d, d: %s", length, data_to_str(data, length));
-    // goodix_send_tls_successfully_established(dev, NULL, NULL);
     goodix_tls_client_send(priv->tls_hop, data, length);
     guint8 buff[1024];
     int size = goodix_tls_client_recv(priv->tls_hop, buff, sizeof(buff));
@@ -1150,17 +1138,6 @@ static void on_goodix_request_tls_connection(FpDevice* dev, guint8* data,
     hs_st->dev = dev;
     hs_st->count = 0;
     goodix_read_tls(dev, on_goodix_tls_read_handshake, hs_st);
-
-    /*guint8 buff[1024];
-    goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
-    int got =
-        goodix_tls_server_receive(priv->tls_hop, buff, sizeof(buff), &err);
-    if (got <= 0) {
-        fp_err("failed to read ssl stream: %s (code: %d)", err->message,
-               err->code);
-        return;
-    }
-    fp_dbg("GOT, len: %d, %s", got, data_to_str(buff, got));*/
 }
 
 static void goodix_tls_ready(GoodixTlsServer* server, GError* err, gpointer dev)
@@ -1170,7 +1147,6 @@ static void goodix_tls_ready(GoodixTlsServer* server, GError* err, gpointer dev)
                err->code);
         return;
     }
-    fp_dbg("Inited tls server");
     goodix_send_request_tls_connection(FP_DEVICE(dev),
                                        on_goodix_request_tls_connection, dev);
 }
@@ -1195,10 +1171,7 @@ void goodix_tls(FpDevice *dev) {
                err->code);
         return;
     }
-    /*if (!goodix_tls_init_cli(s, &err)) {
-      fp_err("failed to init client: %s, code: %d", err->message, err->code);
-      return;
-    }*/
+
     goodix_tls_ready(s, err, self);
 }
 

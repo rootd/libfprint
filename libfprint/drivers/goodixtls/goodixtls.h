@@ -81,9 +81,6 @@ gboolean goodix_tls_init_cli(GoodixTlsServer* self, GError** err);
 int goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
                               guint16 length, GError** error);
 
-void goodix_tls_server_send(GoodixTlsServer* self, guint8* data,
-                            guint16 length);
-
 int goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length);
 
 int goodix_tls_client_recv(GoodixTlsServer* self, guint8* data, guint16 length);

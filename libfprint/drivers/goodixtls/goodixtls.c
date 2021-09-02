@@ -70,31 +70,6 @@ static unsigned int tls_server_psk_server_callback(SSL *ssl,
   return len;
 }
 
-static int tls_server_create_socket(int port)
-{
-    int s;
-    struct sockaddr_in addr;
-
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    s = socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) {
-        return -1;
-    }
-
-    if (bind(s, (struct sockaddr*) &addr, sizeof(addr)) < 0) {
-        return -1;
-    }
-
-    if (listen(s, 1) < 0) {
-        return -1;
-    }
-
-    return s;
-}
-
 static SSL_CTX* tls_server_create_ctx(void)
 {
     const SSL_METHOD* method;
@@ -108,12 +83,6 @@ static SSL_CTX* tls_server_create_ctx(void)
 
     return ctx;
 }
-static SSL_CTX* tls_cli_create_ctx()
-{
-    const SSL_METHOD* method = TLS_client_method();
-    SSL_CTX* ctx = SSL_CTX_new(method);
-    return ctx;
-}
 
 static void tls_server_config_ctx(SSL_CTX* ctx)
 {
@@ -122,36 +91,7 @@ static void tls_server_config_ctx(SSL_CTX* ctx)
     SSL_CTX_set_cipher_list(ctx, "ALL");
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
     SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
-    // SSL_CTX_set_cipher_list(ctx, "ALL");
     SSL_CTX_set_psk_server_callback(ctx, tls_server_psk_server_callback);
-}
-
-static gboolean goodix_tls_connect(GoodixTlsServer* self)
-{
-    struct sockaddr_in addr;
-    guint len = sizeof(addr);
-
-    int client_fd = accept(self->sock_fd, (struct sockaddr*) &addr, &len);
-    if (client_fd >= 0) {
-    }
-
-    GError err;
-    err.code = errno;
-    err.message = strerror(errno);
-    self->connection_callback(self, &err, self->user_data);
-    return FALSE;
-}
-static void goodix_tls_send_handshake(GoodixTlsServer* self)
-{
-    const char reply[] = "Hello Goodix\n";
-    SSL_write(self->ssl_layer, reply, strlen(reply));
-}
-
-void goodix_tls_server_send(GoodixTlsServer* self, guint8* data, guint16 length)
-{
-    fp_dbg("Sending data to goodix tls server");
-    SSL_write(self->ssl_layer, data, length * sizeof(guint8));
-    // send(self->client_fd, data, length * sizeof(guint8), 0);
 }
 
 int goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length)
@@ -183,28 +123,6 @@ static void tls_config_ssl(SSL* ssl)
     SSL_set_cipher_list(ssl, "ALL");
 }
 
-gboolean goodix_tls_init_cli(GoodixTlsServer* self, GError** error)
-{
-    SSL_CTX* ctx = tls_cli_create_ctx();
-    // tls_server_config_ctx(ctx);
-    SSL* ssl_layer = SSL_new(ctx);
-    tls_config_ssl(ssl_layer);
-
-    int retr = SSL_set_fd(ssl_layer, self->client_fd);
-
-    if (retr > 0) {
-        retr = SSL_connect(ssl_layer);
-    }
-
-    if (retr <= 0) {
-        //*error = err_from_ssl(retr);
-    }
-    // SSL_free(ssl_layer);
-    // SSL_CTX_free(ctx);
-
-    return retr <= 0 ? 0 : 1;
-}
-
 static void* goodix_tls_init_serve(void* me)
 {
     GoodixTlsServer* self = me;
@@ -218,23 +136,6 @@ static void* goodix_tls_init_serve(void* me)
         self->connection_callback(self, err_from_ssl(), self->user_data);
     }
     else {
-        g_assert(self->connection_callback);
-        const char* msg = "HELLO WORLD";
-        // SSL_write(self->ssl_layer, msg, strlen(msg));
-
-        /*char buff[1024];
-        int qty = SSL_read(self->ssl_layer, buff, sizeof(buff) - 1);
-        if (qty <= 0) {
-            self->connection_callback(
-                self,
-                g_error_new(G_FILE_ERROR, SSL_get_error(self->ssl_layer, qty),
-                            ""),
-                self->user_data);
-            return NULL;
-        }
-        buff[qty] = 0;*/
-
-        // fp_dbg("Finished tls setup server side, got: %s (%d)", buff, qty);
         self->connection_callback(self, NULL, self->user_data);
     }
     return NULL;
@@ -244,9 +145,6 @@ gboolean goodix_tls_server_deinit(GoodixTlsServer* self, GError** error)
 {
     SSL_shutdown(self->ssl_layer);
     SSL_free(self->ssl_layer);
-
-    // SSL_shutdown(self->ssl_layer);
-    // SSL_free(self->ssl_layer);
 
     close(self->client_fd);
     close(self->sock_fd);
@@ -258,9 +156,7 @@ gboolean goodix_tls_server_deinit(GoodixTlsServer* self, GError** error)
 
 gboolean goodix_tls_server_init(GoodixTlsServer* self, GError** error)
 {
-    // g_assert(self->decoded_callback);
     g_assert(self->connection_callback);
-    // g_assert(self->send_callback);
     SSL_load_error_strings();
     OpenSSL_add_ssl_algorithms();
     SSL_library_init();
