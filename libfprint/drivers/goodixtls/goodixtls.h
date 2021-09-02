@@ -79,7 +79,7 @@ gboolean goodix_tls_init_cli(GoodixTlsServer* self, GError** err);
 // This can be called multiple times. It is called when the device send a TLS
 // packet.
 int goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
-                              guint16 length, GError** error);
+                              guint32 length, GError** error);
 
 int goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length);
 

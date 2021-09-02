@@ -67,6 +67,9 @@ typedef void (*GoodixDefaultCallback)(FpDevice *dev, guint8 *data,
                                       GError *error);
 typedef GoodixDefaultCallback GoodixTlsCallback;
 
+typedef void (*GoodixImageCallback)(FpDevice* dev, guint8* data, guint16 length,
+                                    gpointer user_data, GError* error);
+
 gchar *data_to_str(guint8 *data, guint32 length);
 
 // ---- GOODIX RECEIVE SECTION START ----
@@ -133,7 +136,7 @@ void goodix_send_protocol(FpDevice *dev, guint8 cmd, guint8 *payload,
 void goodix_send_nop(FpDevice *dev, GoodixNoneCallback callback,
                      gpointer user_data);
 
-void goodix_send_mcu_get_image(FpDevice *dev, GoodixNoneCallback callback,
+void goodix_send_mcu_get_image(FpDevice *dev, GoodixImageCallback callback,
                                gpointer user_data);
 
 void goodix_send_mcu_switch_to_fdt_down(FpDevice *dev, guint8 *mode,
@@ -233,6 +236,9 @@ void goodix_tls_run_state(FpiSsm* ssm, FpDevice* dev);
 
 void goodix_tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
 
-void goodix_tls(FpDevice *dev);
+void goodix_tls(FpDevice* dev, GoodixNoneCallback callback, gpointer user_data);
+
+void goodix_tls_read_image(FpDevice* dev, GoodixImageCallback callback,
+                           gpointer user_data);
 
 // ---- TLS SECTION END ----

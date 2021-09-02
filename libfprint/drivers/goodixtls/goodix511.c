@@ -22,7 +22,9 @@
 #include "fpi-assembling.h"
 #include "fpi-image-device.h"
 #include "fpi-ssm.h"
+#include "glibconfig.h"
 #include "gusb/gusb-device.h"
+#include <stdio.h>
 #define FP_COMPONENT "goodixtls511"
 
 #include <glib.h>
@@ -249,19 +251,118 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
     }
 }
 
-static void activate_complete(FpiSsm *ssm, FpDevice *dev, GError *error) {
-    G_DEBUG_HERE();
+static void tls_activation_complete(FpDevice* dev, gpointer user_data,
+                                    GError* error)
+{
+    if (error) {
+        fp_err("failed to complete tls activation: %s", error->message);
+        return;
+    }
     FpImageDevice* image_dev = FP_IMAGE_DEVICE(dev);
 
     fpi_image_device_activate_complete(image_dev, error);
+}
 
+static void activate_complete(FpiSsm* ssm, FpDevice* dev, GError* error)
+{
+    G_DEBUG_HERE();
     if (!error)
-        goodix_tls(dev);
+        goodix_tls(dev, tls_activation_complete, NULL);
 }
 
 // ---- ACTIVE SECTION END ----
 
 // -----------------------------------------------------------------------------
+
+// ---- SCAN SECTION START ----
+
+enum SCAN_STAGES {
+    SCAN_STAGE_SWITCH_TO_FDT_MODE,
+    SCAN_STAGE_SWITCH_TO_FDT_DOWN,
+    SCAN_STAGE_GET_IMG,
+
+    SCAN_STAGE_NUM,
+};
+
+static void check_none_cmd(FpDevice* dev, guint8* data, guint16 len,
+                           gpointer ssm, GError* err)
+{
+    if (err) {
+        fpi_ssm_mark_failed(ssm, err);
+        return;
+    }
+    fpi_ssm_next_state(ssm);
+}
+
+static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
+                             gpointer ssm, GError* err)
+{
+    if (err) {
+        fpi_ssm_mark_failed(ssm, err);
+        return;
+    }
+    fp_dbg("Got image");
+    FILE* out = fopen("./fingerprint.pgm", "wb");
+    fwrite(data, sizeof(guint8), len, out);
+    fclose(out);
+    fpi_ssm_next_state(ssm);
+}
+
+static void scan_get_img(FpDevice* dev, FpiSsm* ssm)
+{
+    goodix_tls_read_image(dev, scan_on_read_img, ssm);
+}
+const guint8 fdt_switch_state_mode[] = {0x0d, 0x01, 0x80, 0xaf, 0x80, 0xa4,
+                                        0x80, 0xb8, 0x80, 0xa8, 0x80, 0xb7};
+
+const guint8 fdt_switch_state_down[] = {0x0c, 0x01, 0x80, 0xaf, 0x80, 0xa4,
+                                        0x80, 0xb8, 0x80, 0xa8, 0x80, 0xb7};
+
+/*
+
+const guint8 fdt_switch_state_mode[] = {0x0d, 0x01, 0x80, 0xaf, 0x80, 0xa3,
+                                        0x80, 0xb7, 0x80, 0xa7, 0x80, 0xb6};
+
+const guint8 fdt_switch_state_down[] = {0x0d, 0x01, 0x80, 0xaf, 0x80,
+                                        0xbf, 0x80, 0xa4, 0x80, 0xb8,
+                                        0x80, 0xa8, 0x80, 0xb7};
+                                        */
+
+static void scan_run_state(FpiSsm* ssm, FpDevice* dev)
+{
+    switch (fpi_ssm_get_cur_state(ssm)) {
+    case SCAN_STAGE_SWITCH_TO_FDT_MODE:
+        goodix_send_mcu_switch_to_fdt_mode(dev, fdt_switch_state_mode,
+                                           sizeof(fdt_switch_state_mode), NULL,
+                                           check_none_cmd, ssm);
+        break;
+    case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
+        goodix_send_mcu_switch_to_fdt_down(dev, fdt_switch_state_down,
+                                           sizeof(fdt_switch_state_down), NULL,
+                                           check_none_cmd, ssm);
+        break;
+    case SCAN_STAGE_GET_IMG:
+        scan_get_img(dev, ssm);
+        break;
+    }
+}
+
+static void scan_complete(FpiSsm* ssm, FpDevice* dev, GError* error)
+{
+    if (error) {
+        fp_err("failed to scan: %s (code: %d)", error->message, error->code);
+        return;
+    }
+    fp_dbg("finished scan");
+}
+
+static void scan_start(FpiDeviceGoodixTls511* dev)
+{
+    fpi_ssm_start(fpi_ssm_new(FP_DEVICE(dev), scan_run_state, SCAN_STAGE_NUM),
+                  scan_complete);
+}
+
+// ---- SCAN SECTION END ----
 
 // ---- DEV SECTION START ----
 
@@ -304,6 +405,7 @@ static void dev_change_state(FpImageDevice* img_dev, FpiImageDeviceState state)
     G_DEBUG_HERE();
 
     if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON) {
+        scan_start(self);
     }
 }
 

@@ -19,7 +19,7 @@
 
 #pragma once
 
-#define GOODIX_EP_IN_MAX_BUF_SIZE (0x2000)
+#define GOODIX_EP_IN_MAX_BUF_SIZE (0x10000)
 #define GOODIX_EP_OUT_MAX_BUF_SIZE (0x40)
 
 #define GOODIX_NULL_CHECKSUM (0x88)

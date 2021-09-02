@@ -43,12 +43,15 @@ typedef struct {
 
     gboolean ack;
     gboolean reply;
+    gboolean tls;
 
     GoodixCmdCallback callback;
     gpointer user_data;
 
     guint8* data;
     guint32 length;
+
+    GoodixCallbackInfo* tls_ready_callback;
 } FpiDeviceGoodixTlsPrivate;
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(FpiDeviceGoodixTls, fpi_device_goodixtls,
@@ -360,6 +363,7 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
   if (!goodix_decode_pack(priv->data, priv->length, &flags, &payload,
                           &payload_len, &valid_checksum)) {
       // Packet is not full, we still need data.
+      fp_dbg("not full packet");
       return;
   }
 
@@ -371,6 +375,9 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
 
     case GOODIX_FLAGS_TLS:
         fp_dbg("Got TLS msg");
+        if (!priv->tls) {
+            fp_warn("unexpected tls packet");
+        }
         goodix_receive_done(dev, payload, payload_len, NULL);
 
         // TLS message sending it to TLS server.
@@ -534,7 +541,7 @@ void goodix_send_nop(FpDevice *dev, GoodixNoneCallback callback,
   goodix_receive_done(dev, NULL, 0, NULL);
 }
 
-void goodix_send_mcu_get_image(FpDevice* dev, GoodixNoneCallback callback,
+void goodix_send_mcu_get_image(FpDevice* dev, GoodixImageCallback callback,
                                gpointer user_data)
 {
     GoodixDefault payload = {.unused_flags = 0x01};
@@ -547,13 +554,13 @@ void goodix_send_mcu_get_image(FpDevice* dev, GoodixNoneCallback callback,
         cb_info->user_data = user_data;
 
         goodix_send_protocol(dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8*) &payload,
-                             sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
-                             goodix_receive_none, cb_info);
+                             sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
+                             goodix_receive_default, cb_info);
         return;
     }
 
     goodix_send_protocol(dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8*) &payload,
-                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
                          NULL, NULL);
 }
 
@@ -1024,6 +1031,7 @@ void goodix_read_tls(FpDevice* dev, GoodixTlsCallback callback,
     priv->callback = callback;
     priv->user_data = user_data;
     priv->reply = TRUE;
+    priv->cmd = 0;
     goodix_receive_data(FP_DEVICE(self));
 }
 
@@ -1040,9 +1048,6 @@ static void on_goodix_tls_server_ready(GoodixTlsServer* server, GError* err,
         fp_err("server ready failed: %s", err->message);
         return;
     }
-    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
-    FpiDeviceGoodixTlsPrivate* priv =
-        fpi_device_goodixtls_get_instance_private(self);
     fp_dbg("TLS connection ready");
 }
 
@@ -1081,15 +1086,26 @@ enum goodix_tls_handshake_stages {
 
     TLS_HANDSHAKE_STAGE_NUM,
 };
+
+static void on_tls_successfully_established(FpDevice* dev, gpointer user_data,
+                                            GError* error)
+{
+
+    fp_dbg("HANDSHAKE DONE");
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+    ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
+        dev, priv->tls_ready_callback->user_data, NULL);
+}
 static void tls_handshake_done(FpiSsm* ssm, FpDevice* dev, GError* error)
 {
     if (error) {
         fp_dbg("failed to do tls handshake: %s (code: %d)", error->message,
                error->code);
     }
-    goodix_send_tls_successfully_established(dev, NULL, NULL);
-
-    fp_dbg("HANDSHAKE DONE");
+    goodix_send_tls_successfully_established(
+        dev, on_tls_successfully_established, NULL);
 }
 static void tls_handshake_run(FpiSsm* ssm, FpDevice* dev)
 {
@@ -1178,13 +1194,20 @@ void goodix_tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error) {
   fpi_image_device_activate_complete(FP_IMAGE_DEVICE(dev), error);
 }
 
-void goodix_tls(FpDevice *dev) {
+void goodix_tls(FpDevice* dev, GoodixNoneCallback callback, gpointer user_data)
+{
     fp_dbg("Starting up goodix tls server");
     FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
     FpiDeviceGoodixTlsPrivate* priv =
         fpi_device_goodixtls_get_instance_private(self);
     g_assert(priv->tls_hop == NULL);
     priv->tls_hop = malloc(sizeof(GoodixTlsServer));
+
+    if (!priv->tls_ready_callback) {
+        priv->tls_ready_callback = malloc(sizeof(GoodixCallbackInfo));
+    }
+    priv->tls_ready_callback->callback = G_CALLBACK(callback);
+    priv->tls_ready_callback->user_data = user_data;
     GoodixTlsServer* s = priv->tls_hop;
     s->connection_callback = on_goodix_tls_server_ready;
     s->user_data = self;
@@ -1196,6 +1219,47 @@ void goodix_tls(FpDevice *dev) {
     }
 
     goodix_tls_ready(s, err, self);
+}
+static void goodix_tls_ready_image_handler(FpDevice* dev, guint8* data,
+                                           guint16 length, gpointer user_data,
+                                           GError* error)
+{
+
+    g_autofree GoodixCallbackInfo* cb_info = user_data;
+    GoodixImageCallback callback = (GoodixImageCallback) cb_info->callback;
+    if (error) {
+        callback(dev, NULL, 0, error, cb_info->user_data);
+        return;
+    }
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+    goodix_tls_client_send(priv->tls_hop, data, length);
+
+    const guint16 size = -1;
+    guint8* buff = malloc(size);
+    GError* err = NULL;
+    if (!goodix_tls_server_receive(priv->tls_hop, buff, size, &err)) {
+        callback(dev, NULL, 0, err, cb_info->user_data);
+        return;
+    }
+
+    callback(dev, buff, size, cb_info->user_data, NULL);
+}
+
+void goodix_tls_read_image(FpDevice* dev, GoodixImageCallback callback,
+                           gpointer user_data)
+{
+    g_assert(callback);
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+    GoodixCallbackInfo* cb_info = malloc(sizeof(GoodixImageCallback));
+
+    cb_info->callback = G_CALLBACK(callback);
+    cb_info->user_data = user_data;
+
+    goodix_send_mcu_get_image(dev, goodix_tls_ready_image_handler, cb_info);
 }
 
 // ---- TLS SECTION END ----

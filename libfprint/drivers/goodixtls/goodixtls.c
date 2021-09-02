@@ -96,6 +96,7 @@ static void tls_server_config_ctx(SSL_CTX* ctx)
 
 int goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length)
 {
+    fp_dbg("sent: %s size: %d", data_to_str(data, length), length);
     return write(self->client_fd, data, length * sizeof(guint8));
 }
 int goodix_tls_client_recv(GoodixTlsServer* self, guint8* data, guint16 length) {
@@ -103,7 +104,7 @@ int goodix_tls_client_recv(GoodixTlsServer* self, guint8* data, guint16 length) 
 }
 
 int goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
-                              guint16 length, GError** error)
+                              guint32 length, GError** error)
 {
     fp_dbg("READ START");
     int retr = SSL_read(self->ssl_layer, data, length * sizeof(guint8));

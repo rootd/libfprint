@@ -84,8 +84,7 @@ gboolean goodix_decode_pack(guint8 *data, guint32 data_len, guint8 *flags,
 
   if (data_len < sizeof(GoodixPack) + sizeof(guint8)) return FALSE;
 
-  length = pack->length; // length = GUINT16_FROM_LE(pack->length);
-  printf("SIZE: %d\n", length);
+  length = GUINT16_FROM_LE(pack->length);
 
   if (data_len < length + sizeof(GoodixPack) + sizeof(guint8)) return FALSE;
 
