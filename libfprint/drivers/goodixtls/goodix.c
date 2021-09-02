@@ -286,10 +286,12 @@ void goodix_receive_protocol(FpDevice *dev, guint8 *data, guint32 length) {
   gboolean valid_checksum, valid_null_checksum;  // TODO implement checksum.
 
   if (!goodix_decode_protocol(data, length, &cmd, &payload, &payload_len,
-                              &valid_checksum, &valid_null_checksum))
-    // Protocol is not full, we still need data.
-    // TODO implement protocol assembling.
-    return;
+                              &valid_checksum, &valid_null_checksum)) {
+      fp_err("Incomplete, size: %d", length);
+      // Protocol is not full, we still need data.
+      // TODO implement protocol assembling.
+      return;
+  }
 
   if (cmd == GOODIX_CMD_ACK) {
       fp_dbg("got ack");
@@ -312,6 +314,35 @@ void goodix_receive_protocol(FpDevice *dev, guint8 *data, guint32 length) {
   goodix_receive_done(dev, payload, payload_len, NULL);
 }
 
+static void goodix_receive_tls(FpDevice* dev, guint8* data, guint32 length)
+{
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+    g_autofree guint8* payload = NULL;
+    guint16 payload_len;
+    gboolean valid_checksum; // TODO implement checksum.
+    guint8 flags;
+
+    if (!goodix_decode_pack(data, length, &flags, &payload, &payload_len,
+                            &valid_checksum)) {
+        fp_err("Incomplete, size tls: %d", length);
+        // Protocol is not full, we still need data.
+        // TODO implement protocol assembling.
+        return;
+    }
+
+    if (!priv->reply) {
+        fp_warn("Didn't excpect a reply for command: 0x%02x", priv->cmd);
+        return;
+    }
+
+    if (priv->ack)
+        fp_warn("Didn't got ACK for command: 0x%02x", priv->cmd);
+
+    goodix_receive_done(dev, payload, payload_len, NULL);
+}
+
 void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
   FpiDeviceGoodixTlsPrivate *priv =
@@ -326,9 +357,10 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
   priv->length += length;
 
   if (!goodix_decode_pack(priv->data, priv->length, &flags, &payload,
-                          &payload_len, &valid_checksum))
-    // Packet is not full, we still need data.
-    return;
+                          &payload_len, &valid_checksum)) {
+      // Packet is not full, we still need data.
+      return;
+  }
 
   switch (flags) {
     case GOODIX_FLAGS_MSG_PROTOCOL:
@@ -338,7 +370,9 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
 
     case GOODIX_FLAGS_TLS:
         fp_dbg("Got TLS msg");
-        goodix_receive_done(dev, data, length, NULL);
+        // goodix_receive_done(dev, data, length, NULL);
+        goodix_receive_done(dev, payload, payload_len, NULL);
+        // goodix_receive_tls(dev, payload, priv->length);
 
         // TLS message sending it to TLS server.
         // TODO
@@ -997,6 +1031,7 @@ static void on_goodix_tls_server_ready(GoodixTlsServer* server, GError* err,
     FpiDeviceGoodixTlsPrivate* priv =
         fpi_device_goodixtls_get_instance_private(self);
     guint8 buff[1024];
+    fp_dbg("TLS connection ready");
     int got =
         goodix_tls_server_receive(priv->tls_hop, buff, sizeof(buff), &err);
     if (got <= 0) {
@@ -1033,6 +1068,10 @@ static void on_goodix_request_tls_connection(FpDevice* dev, guint8* data,
     fp_dbg("len: %d, d: %s", length, data_to_str(data, length));
     // goodix_send_tls_successfully_established(dev, NULL, NULL);
     goodix_tls_client_send(priv->tls_hop, data, length);
+    guint8 buff[1024];
+    int size = goodix_tls_client_recv(priv->tls_hop, buff, sizeof(buff));
+    goodix_send_pack(dev, GOODIX_FLAGS_TLS, buff, size, NULL, &err);
+
     goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
     /*guint8 buff[1024];
     goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);

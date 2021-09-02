@@ -115,10 +115,11 @@ static void tls_server_config_ctx(SSL_CTX* ctx)
 {
     SSL_CTX_set_ecdh_auto(ctx, 1);
     SSL_CTX_set_dh_auto(ctx, 1);
+    SSL_CTX_set_cipher_list(ctx, "ALL");
     // SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
     // SSL_CTX_set_max_proto_version(ctx, TLS1_2_VERSION);
     // SSL_CTX_set_cipher_list(ctx, "ALL");
-    // SSL_CTX_set_psk_server_callback(ctx, tls_server_psk_server_callback);
+    SSL_CTX_set_psk_server_callback(ctx, tls_server_psk_server_callback);
 }
 
 static gboolean goodix_tls_connect(GoodixTlsServer* self)
@@ -153,6 +154,9 @@ void goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length)
 {
     write(self->client_fd, data, length * sizeof(guint8));
 }
+int goodix_tls_client_recv(GoodixTlsServer* self, guint8* data, guint16 length) {
+    return read(self->client_fd, data, length * sizeof(guint8));
+}
 
 int goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
                               guint16 length, GError** error)
@@ -171,8 +175,7 @@ static void tls_config_ssl(SSL* ssl)
     SSL_set_min_proto_version(ssl, TLS1_2_VERSION);
     SSL_set_max_proto_version(ssl, TLS1_2_VERSION);
     SSL_set_psk_server_callback(ssl, tls_server_psk_server_callback);
-    SSL_set_cipher_list(ssl, "ADH-AES128-SHA:ADH-AES128-SHA256:ADH-AES256-"
-                             "SHA256:@SECLEVEL=0");
+    SSL_set_cipher_list(ssl, "ALL");
 }
 
 gboolean goodix_tls_init_cli(GoodixTlsServer* self, GError** error)
@@ -203,7 +206,9 @@ static void* goodix_tls_init_serve(void* me)
     self->ssl_layer = SSL_new(self->ssl_ctx);
     tls_config_ssl(self->ssl_layer);
     SSL_set_fd(self->ssl_layer, self->sock_fd);
+    fp_dbg("TLS server waiting to accept...");
     int retr = SSL_accept(self->ssl_layer);
+    fp_dbg("TLS server accept done");
     if (retr <= 0) {
         self->connection_callback(
             self, err_from_ssl(SSL_get_error(self->ssl_layer, retr)),

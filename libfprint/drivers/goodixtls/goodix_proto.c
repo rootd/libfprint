@@ -19,6 +19,7 @@
 
 #include <gio/gio.h>
 #include <glib.h>
+#include <stdio.h>
 
 #include "goodix_proto.h"
 
@@ -83,7 +84,8 @@ gboolean goodix_decode_pack(guint8 *data, guint32 data_len, guint8 *flags,
 
   if (data_len < sizeof(GoodixPack) + sizeof(guint8)) return FALSE;
 
-  length = GUINT16_FROM_LE(pack->length);
+  length = pack->length; // length = GUINT16_FROM_LE(pack->length);
+  printf("SIZE: %d\n", length);
 
   if (data_len < length + sizeof(GoodixPack) + sizeof(guint8)) return FALSE;
 

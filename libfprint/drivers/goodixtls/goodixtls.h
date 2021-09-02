@@ -86,6 +86,8 @@ void goodix_tls_server_send(GoodixTlsServer* self, guint8* data,
 void goodix_tls_client_send(GoodixTlsServer* self, guint8* data,
                             guint16 length);
 
+int goodix_tls_client_recv(GoodixTlsServer* self, guint8* data, guint16 length);
+
 // This is called only once to deinit the TLS server.
 // Return TRUE on success, FALSE otherwise and error should be set.
 gboolean goodix_tls_server_deinit(GoodixTlsServer* self, GError** error);

@@ -225,6 +225,8 @@ gboolean goodix_dev_deinit(FpDevice *dev, GError **error);
 
 // ---- TLS SECTION START ----
 
+void goodix_send_tls()
+
 void goodix_tls_run_state(FpiSsm *ssm, FpDevice *dev);
 
 void goodix_tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
