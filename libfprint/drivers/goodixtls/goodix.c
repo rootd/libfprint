@@ -1075,7 +1075,8 @@ static void on_goodix_tls_read_handshake(FpDevice* dev, guint8* data,
     fp_dbg("handshake loop, got: %s, size: %d", data_to_str(data, length),
            length);
 
-    goodix_tls_client_send(priv->tls_hop, data, length);
+    int sent = goodix_tls_client_send(priv->tls_hop, data, length);
+    fp_dbg("sent: %d bytes", sent);
 
     if (state->count >= 2) {
         fp_dbg("Reading to proxy back");
@@ -1136,6 +1137,11 @@ static void on_goodix_request_tls_connection(FpDevice* dev, guint8* data,
     goodix_tls_client_send(priv->tls_hop, data, length);
     guint8 buff[1024];
     int size = goodix_tls_client_recv(priv->tls_hop, buff, sizeof(buff));
+    if (size < 0) {
+        fp_err("failed to read: %d", size);
+        goodix_send_tls_successfully_established(FP_DEVICE(dev), NULL, NULL);
+        return;
+    }
     goodix_send_pack(dev, GOODIX_FLAGS_TLS, buff, size, NULL, &err);
 
     goodix_tls_handshake_state* hs_st =

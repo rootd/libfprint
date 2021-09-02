@@ -35,6 +35,7 @@
 #include "fp-device.h"
 #include "fpi-device.h"
 #include "glibconfig.h"
+#include "goodix.h"
 #include "goodixtls.h"
 
 static GError* err_from_ssl()
@@ -56,11 +57,17 @@ static unsigned int tls_server_psk_server_callback(SSL *ssl,
     fp_dbg("Provided PSK R is too long for OpenSSL");
     return 0;
   }
-  fp_dbg("PSK WANTED");
+  fp_dbg("PSK WANTED %d", max_psk_len);
+  // I don't know why we must use OPENSSL_hexstr2buf but just copying zeros
+  // doesn't work
+  const char* buff = "000000000000000000000000000000000000000000000000000000000"
+                     "0000000";
+  long len = 0;
+  unsigned char* key = OPENSSL_hexstr2buf(buff, &len);
+  memcpy(psk, key, len);
+  OPENSSL_free(key);
 
-  psk = (unsigned char *)&goodix_511_psk_0;
-
-  return sizeof(goodix_511_psk_0);
+  return len;
 }
 
 static int tls_server_create_socket(int port)
@@ -147,9 +154,9 @@ void goodix_tls_server_send(GoodixTlsServer* self, guint8* data, guint16 length)
     // send(self->client_fd, data, length * sizeof(guint8), 0);
 }
 
-void goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length)
+int goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length)
 {
-    write(self->client_fd, data, length * sizeof(guint8));
+    return write(self->client_fd, data, length * sizeof(guint8));
 }
 int goodix_tls_client_recv(GoodixTlsServer* self, guint8* data, guint16 length) {
     return read(self->client_fd, data, length * sizeof(guint8));
@@ -278,6 +285,6 @@ gboolean goodix_tls_server_init(GoodixTlsServer* self, GError** error)
         return FALSE;
     }
     pthread_create(&self->serve_thread, 0, goodix_tls_init_serve, self);
-    // return
+
     return TRUE;
 }

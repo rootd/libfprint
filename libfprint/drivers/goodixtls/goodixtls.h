@@ -84,8 +84,7 @@ int goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
 void goodix_tls_server_send(GoodixTlsServer* self, guint8* data,
                             guint16 length);
 
-void goodix_tls_client_send(GoodixTlsServer* self, guint8* data,
-                            guint16 length);
+int goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length);
 
 int goodix_tls_client_recv(GoodixTlsServer* self, guint8* data, guint16 length);
 
