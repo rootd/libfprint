@@ -441,23 +441,24 @@ void goodix_receive_data(FpDevice *dev) {
 
 gboolean goodix_send_data(FpDevice *dev, guint8 *data, guint32 length,
                           GDestroyNotify free_func, GError **error) {
-  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiDeviceGoodixTlsClass* class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
+    fp_dbg("--- SEND DATA SIZE: %d ---", length);
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsClass* class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
 
-  for (guint32 i = 0; i < length; i += GOODIX_EP_OUT_MAX_BUF_SIZE) {
-      FpiUsbTransfer* transfer = fpi_usb_transfer_new(dev);
-      transfer->short_is_error = TRUE;
+    for (guint32 i = 0; i < length; i += GOODIX_EP_OUT_MAX_BUF_SIZE) {
+        FpiUsbTransfer* transfer = fpi_usb_transfer_new(dev);
+        transfer->short_is_error = TRUE;
 
-      fpi_usb_transfer_fill_bulk_full(transfer, class->ep_out, data + i,
-                                      GOODIX_EP_OUT_MAX_BUF_SIZE, NULL);
+        fpi_usb_transfer_fill_bulk_full(transfer, class->ep_out, data + i,
+                                        GOODIX_EP_OUT_MAX_BUF_SIZE, NULL);
 
-      if (!fpi_usb_transfer_submit_sync(transfer, GOODIX_TIMEOUT, error)) {
-          if (free_func)
-              free_func(data);
-          fpi_usb_transfer_unref(transfer);
-          return FALSE;
-      }
-      fpi_usb_transfer_unref(transfer);
+        if (!fpi_usb_transfer_submit_sync(transfer, GOODIX_TIMEOUT, error)) {
+            if (free_func)
+                free_func(data);
+            fpi_usb_transfer_unref(transfer);
+            return FALSE;
+        }
+        fpi_usb_transfer_unref(transfer);
   }
 
   if (free_func)
@@ -1130,6 +1131,7 @@ static void tls_handshake_done(FpiSsm* ssm, FpDevice* dev, GError* error)
     goodix_send_tls_successfully_established(
         dev, on_tls_successfully_established, NULL);
 }
+
 static void tls_handshake_run(FpiSsm* ssm, FpDevice* dev)
 {
     FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
@@ -1170,7 +1172,7 @@ static void tls_handshake_run(FpiSsm* ssm, FpDevice* dev)
             return;
         }
         GError* err = NULL;
-        if (!goodix_send_data(dev, buff, size, NULL, &err)) {
+        if (!goodix_send_pack(dev, GOODIX_FLAGS_TLS, buff, size, NULL, &err)) {
             fpi_ssm_mark_failed(ssm, err);
             return;
         }
