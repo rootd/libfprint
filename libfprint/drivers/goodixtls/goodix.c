@@ -921,6 +921,29 @@ void goodix_send_tls_successfully_established(FpDevice *dev,
                        GOODIX_TIMEOUT, FALSE, NULL, NULL);
 }
 
+void goodix_send_read_otp(FpDevice* dev, GoodixDefaultCallback callback,
+                          gpointer user_data)
+{
+    GoodixNone payload = {};
+    GoodixCallbackInfo* cb_info;
+
+    if (callback) {
+        cb_info = malloc(sizeof(GoodixCallbackInfo));
+
+        cb_info->callback = G_CALLBACK(callback);
+        cb_info->user_data = user_data;
+
+        goodix_send_protocol(dev, GOODIX_CMD_READ_OTP, (guint8*) &payload,
+                             sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
+                             goodix_receive_default, cb_info);
+        return;
+    }
+
+    goodix_send_protocol(dev, GOODIX_CMD_READ_OTP, (guint8*) &payload,
+                         sizeof(payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
+                         NULL, NULL);
+}
+
 void goodix_send_preset_psk_write(FpDevice *dev, guint32 flags, guint8 *psk,
                                   guint16 length, GDestroyNotify free_func,
                                   GoodixSuccessCallback callback,

@@ -20,6 +20,7 @@
 #include "fp-device.h"
 #include "fp-image-device.h"
 #include "fpi-assembling.h"
+#include "fpi-context.h"
 #include "fpi-image-device.h"
 #include "fpi-ssm.h"
 #include "glibconfig.h"
@@ -37,6 +38,9 @@
 
 struct _FpiDeviceGoodixTls511 {
   FpiDeviceGoodixTls parent;
+
+  guint8* otp;
+  guint16 otp_len;
 };
 
 G_DECLARE_FINAL_TYPE(FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,
@@ -55,6 +59,7 @@ enum activate_states {
     ACTIVATE_CHECK_PSK,
     ACTIVATE_RESET,
     ACTIVATE_SET_MCU_IDLE,
+    ACTIVATE_SET_ODP,
     ACTIVATE_SET_MCU_CONFIG,
     ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY,
     ACTIVATE_NUM_STATES,
@@ -198,6 +203,63 @@ static void check_powerdown_scan_freq(FpDevice* dev, gboolean success,
         fpi_ssm_next_state(user_data);
     }
 }
+
+enum otp_write_states {
+    OTP_WRITE_1,
+    OTP_WRITE_2,
+    OTP_WRITE_3,
+    OTP_WRITE_4,
+
+    OTP_WRITE_NUM,
+};
+
+static guint16 otp_write_addrs[] = {0x0220, 0x0236, 0x0238, 0x023a};
+
+static void otp_write_run(FpiSsm* ssm, FpDevice* dev)
+{
+    guint16 data;
+    FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
+    guint8* otp = self->otp;
+    switch (fpi_ssm_get_cur_state(ssm)) {
+    case OTP_WRITE_1:
+        data = GUINT16_FROM_LE(otp[46] << 4 | 8);
+        break;
+    case OTP_WRITE_2:
+        data = GUINT16_FROM_LE(otp[47]);
+        break;
+    case OTP_WRITE_3:
+        data = GUINT16_FROM_LE(otp[48]);
+        break;
+    case OTP_WRITE_4:
+        data = GUINT16_FROM_LE(otp[49]);
+        break;
+    }
+
+    goodix_send_write_sensor_register(
+        dev, otp_write_addrs[fpi_ssm_get_cur_state(ssm)], data, check_none,
+        ssm);
+}
+
+static void read_otp_callback(FpDevice* dev, guint8* data, guint16 len,
+                              gpointer ssm, GError* err)
+{
+    if (err) {
+        fpi_ssm_mark_failed(ssm, err);
+        return;
+    }
+    if (len < 64) {
+        fpi_ssm_mark_failed(ssm, g_error_new(FP_DEVICE_ERROR,
+                                             FP_DEVICE_ERROR_DATA_INVALID,
+                                             "OTP is invalid (len: %d)", 64));
+        return;
+    }
+    FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
+    self->otp = data;
+    self->otp_len = len;
+    FpiSsm* otp_ssm = fpi_ssm_new(dev, otp_write_run, OTP_WRITE_NUM);
+    fpi_ssm_start_subsm(ssm, otp_ssm);
+}
+
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
   GError *error = NULL;
 
@@ -238,6 +300,9 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
         goodix_send_mcu_switch_to_idle_mode(dev, 20, check_idle, ssm);
         break;
 
+    case ACTIVATE_SET_ODP:
+        goodix_send_read_otp(dev, read_otp_callback, ssm);
+        break;
     case ACTIVATE_SET_MCU_CONFIG:
         goodix_send_upload_config_mcu(dev, goodix_511_config,
                                       sizeof(goodix_511_config), NULL,
