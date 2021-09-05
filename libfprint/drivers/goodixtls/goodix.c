@@ -1241,7 +1241,7 @@ void goodix_tls_read_image(FpDevice* dev, GoodixImageCallback callback,
                            gpointer user_data)
 {
     g_assert(callback);
-    GoodixCallbackInfo* cb_info = malloc(sizeof(GoodixImageCallback));
+    GoodixCallbackInfo* cb_info = malloc(sizeof(GoodixCallbackInfo));
 
     cb_info->callback = G_CALLBACK(callback);
     cb_info->user_data = user_data;
