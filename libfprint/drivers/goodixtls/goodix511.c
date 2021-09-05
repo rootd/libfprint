@@ -402,6 +402,37 @@ static unsigned char get_pix(struct fpi_frame_asmbl_ctx* ctx,
 {
     return frame->data[x + y * ctx->frame_width];
 }
+
+#define GOODIX511_WIDTH 80
+#define GOODIX511_HEIGHT 88
+#define GOODIX511_FRAME_SIZE 80 * 88
+#define GOODIX511_RAW_FRAME_SIZE                                               \
+    GOODIX511_FRAME_SIZE / 4 * 6 // For every 4 pixels there are 6 bytes
+
+static void decode_frame(guint8* raw_frame, GSList** frames)
+{
+    const int frame_size = GOODIX511_FRAME_SIZE;
+    struct fpi_frame* frame = g_malloc(frame_size + sizeof(struct fpi_frame));
+    raw_frame += 8;
+
+    guint8* pix = frame->data;
+    for (int i = 0; i < GOODIX511_RAW_FRAME_SIZE; i += 6) {
+        guint8* chunk = raw_frame + i;
+        *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
+        *pix++ = ((chunk[3] << 4) + (chunk[0] >> 4));
+        *pix++ = ((chunk[5] & 0xf) << 8) + chunk[2];
+        *pix++ = ((chunk[4] << 4) + (chunk[5] >> 4));
+    }
+    *frames = g_slist_append(*frames, frame);
+}
+static void write_frame(guint8* frame, GSList** frames)
+{
+    FILE* out = fopen("./fingerprint.pgm", "w");
+    const char buff[] = "P2\n88 80\n4095\n";
+    fwrite(buff, sizeof(char), sizeof(buff), out);
+    fwrite(frame, sizeof(guint8), GOODIX511_FRAME_SIZE, out);
+    fclose(out);
+}
 static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
                              gpointer ssm, GError* err)
 {
@@ -411,26 +442,40 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
     }
     FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
     if (fpi_ssm_get_cur_state(ssm) == SCAN_STAGE_GET_IMG_1) {
-        if (g_slist_length(self->frames) > 1) {
+        if (g_slist_length(self->frames) <= 3) {
+            /*GSList* frame = NULL;
+            // decode_frame(data, &frame);
+            FILE* f = fopen("./fingerraw.bin", "wb");
+            fwrite(data, sizeof(guint8), len, f);
+            fclose(f);
+            // write_frame(g_slist_nth_data(frame, 0), NULL);*/
             self->frames = g_slist_append(self->frames, data);
             fpi_ssm_jump_to_state(ssm, SCAN_STAGE_SWITCH_TO_FDT_MODE_2);
             return;
         }
         else {
             self->frames = g_slist_append(self->frames, data);
+            GSList* raw_frames = g_slist_nth(self->frames, 1);
 
             FpImageDevice* img_dev = FP_IMAGE_DEVICE(dev);
             struct fpi_frame_asmbl_ctx assembly_ctx;
             assembly_ctx.frame_width = 80;
             assembly_ctx.frame_height = 86;
-            assembly_ctx.image_width = 80;
+            assembly_ctx.image_width = 80 * 3 / 2;
             assembly_ctx.get_pixel = get_pix;
 
+            GSList* frames = NULL;
+
+            g_slist_foreach(raw_frames, (GFunc) decode_frame, &frames);
+            //  g_slist_foreach(g_slist_nth(frames, 1), (GFunc) write_frame,
+            //  NULL);
+
             // write_pgm(data, len);
-            FpImage* img = fp_image_new(80, 88);
-            img->data = malloc(sizeof(guint8) * 80 * 88);
-            memcpy(img->data, data, 80 * 88);
+            fpi_do_movement_estimation(&assembly_ctx, frames);
+            FpImage* img = fpi_assemble_frames(&assembly_ctx, frames);
             img->flags |= FPI_IMAGE_PARTIAL;
+
+            g_slist_free_full(frames, g_free);
 
             fpi_image_device_image_captured(img_dev, img);
             fpi_image_device_report_finger_status(img_dev, FALSE);
