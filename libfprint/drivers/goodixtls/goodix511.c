@@ -343,6 +343,11 @@ static void activate_complete(FpiSsm* ssm, FpDevice* dev, GError* error)
     G_DEBUG_HERE();
     if (!error)
         goodix_tls(dev, tls_activation_complete, NULL);
+    else {
+        fp_err("failed during activation: %s (code: %d)", error->message,
+               error->code);
+        fpi_image_device_activate_complete(FP_IMAGE_DEVICE(dev), error);
+    }
 }
 
 // ---- ACTIVE SECTION END ----
