@@ -38,6 +38,16 @@
 #include "goodix_proto.h"
 #include "goodix511.h"
 
+#include <math.h>
+
+#define GOODIX511_WIDTH 88
+#define GOODIX511_HEIGHT 80
+#define GOODIX511_FRAME_SIZE 80 * 88
+// For every 4 pixels there are 6 bytes and there are 8 extra start bytes and 5
+// extra end
+#define GOODIX511_RAW_FRAME_SIZE 8 + GOODIX511_FRAME_SIZE / 4 * 6 + 5
+#define GOODIX511_CAP_FRAMES 3 // Number of frames we capture per swipe
+
 struct _FpiDeviceGoodixTls511 {
   FpiDeviceGoodixTls parent;
 
@@ -46,8 +56,6 @@ struct _FpiDeviceGoodixTls511 {
 
   GSList* frames;
 };
-
-#define GOODIXTLS_CAP_FRAMES 1
 
 G_DECLARE_FINAL_TYPE(FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,
                      DEVICE_GOODIXTLS511, FpiDeviceGoodixTls);
@@ -376,31 +384,6 @@ static void check_none_cmd(FpDevice* dev, guint8* data, guint16 len,
     fpi_ssm_next_state(ssm);
 }
 
-static void write_pgm(guint8* data, guint16 len)
-{
-    g_assert(len != 0);
-    int needed = len / 6 * 4;
-    int* img = malloc(sizeof(int) * needed);
-    int* head = img;
-    for (int i = 0; i < len; i += 6) {
-        guint8* chunk = data + i;
-        *head++ = ((chunk[0] & 0xf) << 8) + chunk[1];
-        *head++ = ((chunk[3] << 4) + (chunk[0] >> 4));
-        *head++ = ((chunk[5] & 0xf) << 8) + chunk[2];
-        *head++ = ((chunk[4] << 4) + (chunk[5] >> 4));
-    }
-    FILE* out = fopen("./fingerprint.pgm", "w");
-    const char buff[] = "P2\n88 80\n4095\n";
-    fwrite(buff, sizeof(char), sizeof(buff), out);
-    int count = 0;
-    for (int* line = img; count < needed; line += 4) {
-        fwrite(line, sizeof(int), 4, out);
-        fwrite("\n", sizeof(char), 1, out);
-        count += 4;
-    }
-    fclose(out);
-    free(img);
-}
 static unsigned char get_pix(struct fpi_frame_asmbl_ctx* ctx,
                              struct fpi_frame* frame, unsigned int x,
                              unsigned int y)
@@ -408,36 +391,25 @@ static unsigned char get_pix(struct fpi_frame_asmbl_ctx* ctx,
     return frame->data[x + y * ctx->frame_width];
 }
 
-#define GOODIX511_WIDTH 80
-#define GOODIX511_HEIGHT 88
-#define GOODIX511_FRAME_SIZE 80 * 88
-#define GOODIX511_RAW_FRAME_SIZE                                               \
-    GOODIX511_FRAME_SIZE / 4 * 6 // For every 4 pixels there are 6 bytes
+// Bitdepth is 12, but we have to fit it in a byte
+static unsigned char squash(int v) { return v / 16; }
 
 static void decode_frame(guint8* raw_frame, GSList** frames)
 {
-    const int frame_size = GOODIX511_FRAME_SIZE;
+    const int frame_size = GOODIX511_FRAME_SIZE * 2;
     struct fpi_frame* frame = g_malloc(frame_size + sizeof(struct fpi_frame));
-    raw_frame += 8;
 
     guint8* pix = frame->data;
-    for (int i = 0; i < GOODIX511_RAW_FRAME_SIZE; i += 6) {
+    for (int i = 8; i != GOODIX511_RAW_FRAME_SIZE - 5; i += 6) {
         guint8* chunk = raw_frame + i;
-        *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
-        *pix++ = ((chunk[3] << 4) + (chunk[0] >> 4));
-        *pix++ = ((chunk[5] & 0xf) << 8) + chunk[2];
-        *pix++ = ((chunk[4] << 4) + (chunk[5] >> 4));
+        *pix++ = squash(((chunk[0] & 0xf) << 8) + chunk[1]);
+        *pix++ = squash((chunk[3] << 4) + (chunk[0] >> 4));
+        *pix++ = squash(((chunk[5] & 0xf) << 8) + chunk[2]);
+        *pix++ = squash((chunk[4] << 4) + (chunk[5] >> 4));
     }
     *frames = g_slist_append(*frames, frame);
 }
-static void write_frame(guint8* frame, GSList** frames)
-{
-    FILE* out = fopen("./fingerprint.pgm", "w");
-    const char buff[] = "P2\n88 80\n4095\n";
-    fwrite(buff, sizeof(char), sizeof(buff), out);
-    fwrite(frame, sizeof(guint8), GOODIX511_FRAME_SIZE, out);
-    fclose(out);
-}
+
 static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
                              gpointer ssm, GError* err)
 {
@@ -447,13 +419,7 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
     }
     FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
     if (fpi_ssm_get_cur_state(ssm) == SCAN_STAGE_GET_IMG_1) {
-        if (g_slist_length(self->frames) <= 3) {
-            /*GSList* frame = NULL;
-            // decode_frame(data, &frame);
-            FILE* f = fopen("./fingerraw.bin", "wb");
-            fwrite(data, sizeof(guint8), len, f);
-            fclose(f);
-            // write_frame(g_slist_nth_data(frame, 0), NULL);*/
+        if (g_slist_length(self->frames) <= GOODIX511_CAP_FRAMES) {
             self->frames = g_slist_append(self->frames, data);
             fpi_ssm_jump_to_state(ssm, SCAN_STAGE_SWITCH_TO_FDT_MODE_2);
             return;
@@ -464,18 +430,15 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
 
             FpImageDevice* img_dev = FP_IMAGE_DEVICE(dev);
             struct fpi_frame_asmbl_ctx assembly_ctx;
-            assembly_ctx.frame_width = 80;
-            assembly_ctx.frame_height = 86;
-            assembly_ctx.image_width = 80 * 3 / 2;
+            assembly_ctx.frame_width = GOODIX511_WIDTH;
+            assembly_ctx.frame_height = GOODIX511_HEIGHT;
+            assembly_ctx.image_width = GOODIX511_WIDTH;
             assembly_ctx.get_pixel = get_pix;
 
             GSList* frames = NULL;
 
             g_slist_foreach(raw_frames, (GFunc) decode_frame, &frames);
-            //  g_slist_foreach(g_slist_nth(frames, 1), (GFunc) write_frame,
-            //  NULL);
 
-            // write_pgm(data, len);
             fpi_do_movement_estimation(&assembly_ctx, frames);
             FpImage* img = fpi_assemble_frames(&assembly_ctx, frames);
             img->flags |= FPI_IMAGE_PARTIAL;
@@ -650,8 +613,8 @@ static void fpi_device_goodixtls511_class_init(
 
   // TODO
   img_dev_class->bz3_threshold = 24;
-  img_dev_class->img_width = 80;
-  img_dev_class->img_height = 88;
+  img_dev_class->img_width = GOODIX511_WIDTH;
+  img_dev_class->img_height = GOODIX511_HEIGHT;
 
   img_dev_class->img_open = dev_init;
   img_dev_class->img_close = dev_deinit;
