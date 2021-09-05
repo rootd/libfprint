@@ -1055,7 +1055,6 @@ void goodix_read_tls(FpDevice* dev, GoodixTlsCallback callback,
     priv->user_data = user_data;
     priv->reply = TRUE;
     priv->cmd = 0;
-    goodix_receive_data(FP_DEVICE(self));
 }
 
 enum tls_states {
