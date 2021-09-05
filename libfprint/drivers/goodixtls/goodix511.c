@@ -244,6 +244,10 @@ static void otp_write_run(FpiSsm* ssm, FpDevice* dev)
     goodix_send_write_sensor_register(
         dev, otp_write_addrs[fpi_ssm_get_cur_state(ssm)], data, check_none,
         ssm);
+    if (fpi_ssm_get_cur_state(ssm) == OTP_WRITE_NUM - 1) {
+        free(self->otp);
+        self->otp_len = 0;
+    }
 }
 
 static void read_otp_callback(FpDevice* dev, guint8* data, guint16 len,
@@ -260,7 +264,8 @@ static void read_otp_callback(FpDevice* dev, guint8* data, guint16 len,
         return;
     }
     FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
-    self->otp = data;
+    self->otp = malloc(len);
+    memcpy(self->otp, data, len);
     self->otp_len = len;
     FpiSsm* otp_ssm = fpi_ssm_new(dev, otp_write_run, OTP_WRITE_NUM);
     fpi_ssm_start_subsm(ssm, otp_ssm);
