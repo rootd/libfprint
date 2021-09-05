@@ -52,7 +52,6 @@ struct _FpiDeviceGoodixTls511 {
   FpiDeviceGoodixTls parent;
 
   guint8* otp;
-  guint16 otp_len;
 
   GSList* frames;
 };
@@ -178,7 +177,6 @@ static void check_preset_psk_read(FpDevice *dev, gboolean success,
 }
 static void check_idle(FpDevice* dev, gpointer user_data, GError* err)
 {
-    G_DEBUG_HERE();
 
     if (err) {
         fpi_ssm_mark_failed(user_data, err);
@@ -189,14 +187,13 @@ static void check_idle(FpDevice* dev, gpointer user_data, GError* err)
 static void check_config_upload(FpDevice* dev, gboolean success,
                                 gpointer user_data, GError* error)
 {
-    G_DEBUG_HERE();
     if (error) {
         fpi_ssm_mark_failed(user_data, error);
     }
     else if (!success) {
-        GError* err = malloc(sizeof(GError));
-        err->message = "Failed to upload config";
-        fpi_ssm_mark_failed(user_data, err);
+        fpi_ssm_mark_failed(user_data,
+                            g_error_new(FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO,
+                                        "failed to upload mcu config"));
     }
     else {
         fpi_ssm_next_state(user_data);
@@ -209,9 +206,9 @@ static void check_powerdown_scan_freq(FpDevice* dev, gboolean success,
         fpi_ssm_mark_failed(user_data, error);
     }
     else if (!success) {
-        GError* err = malloc(sizeof(GError));
-        err->message = "Failed set powerdown";
-        fpi_ssm_mark_failed(user_data, err);
+        fpi_ssm_mark_failed(user_data,
+                            g_error_new(FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO,
+                                        "failed to set powerdown freq"));
     }
     else {
         fpi_ssm_next_state(user_data);
@@ -254,7 +251,6 @@ static void otp_write_run(FpiSsm* ssm, FpDevice* dev)
         ssm);
     if (fpi_ssm_get_cur_state(ssm) == OTP_WRITE_NUM - 1) {
         free(self->otp);
-        self->otp_len = 0;
     }
 }
 
@@ -274,22 +270,17 @@ static void read_otp_callback(FpDevice* dev, guint8* data, guint16 len,
     FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
     self->otp = malloc(len);
     memcpy(self->otp, data, len);
-    self->otp_len = len;
     FpiSsm* otp_ssm = fpi_ssm_new(dev, otp_write_run, OTP_WRITE_NUM);
     fpi_ssm_start_subsm(ssm, otp_ssm);
 }
 
-static void activate_run_state(FpiSsm *ssm, FpDevice *dev) {
-  GError *error = NULL;
+static void activate_run_state(FpiSsm* ssm, FpDevice* dev)
+{
 
-  switch (fpi_ssm_get_cur_state(ssm)) {
+    switch (fpi_ssm_get_cur_state(ssm)) {
     case ACTIVATE_READ_AND_NOP:
-        /* Uncomment below in case the successfully established bit didn't get
-           run and you get a timeout when trying to rerun */
-        // goodix_send_tls_successfully_established(dev, NULL, NULL);
-        // exit(0);
-        //           Nop seems to clear the previous command buffer. But we are
-        //           unable to do so.
+        // Nop seems to clear the previous command buffer. But we are
+        // unable to do so.
         goodix_receive_data(dev);
         goodix_send_nop(dev, check_none, ssm);
         break;
@@ -473,13 +464,8 @@ const guint8 fdt_switch_state_down[] = {
     0xa4, 0x80, 0xb8, 0x80, 0xa8, 0x80, 0xb7,
 };
 
-const guint8 fdt_switch_state_down_1[] = {0x0d, 0x01, 0x80, 0xaf, 0x80,
-                                          0xbf, 0x80, 0xa4, 0x80, 0xb8,
-                                          0x80, 0xa8, 0x80, 0xb7};
-
 static void scan_run_state(FpiSsm* ssm, FpDevice* dev)
 {
-    FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
     FpImageDevice* img_dev = FP_IMAGE_DEVICE(dev);
     switch (fpi_ssm_get_cur_state(ssm)) {
     case SCAN_STAGE_QUERY_MCU:
@@ -487,26 +473,26 @@ static void scan_run_state(FpiSsm* ssm, FpDevice* dev)
         break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_MODE_0:
-        goodix_send_mcu_switch_to_fdt_mode(dev, fdt_switch_state_mode_0,
-                                           sizeof(fdt_switch_state_mode_0),
-                                           NULL, check_none_cmd, ssm);
+        goodix_send_mcu_switch_to_fdt_mode(
+            dev, (guint8*) fdt_switch_state_mode_0,
+            sizeof(fdt_switch_state_mode_0), NULL, check_none_cmd, ssm);
         break;
     case SCAN_STAGE_NAV_0:
         goodix_send_nav_0(dev, check_none_cmd, ssm);
         break;
     case SCAN_STAGE_SWITCH_TO_FDT_MODE_1:
-        goodix_send_mcu_switch_to_fdt_mode(dev, fdt_switch_state_mode_1,
-                                           sizeof(fdt_switch_state_mode_1),
-                                           NULL, check_none_cmd, ssm);
+        goodix_send_mcu_switch_to_fdt_mode(
+            dev, (guint8*) fdt_switch_state_mode_1,
+            sizeof(fdt_switch_state_mode_1), NULL, check_none_cmd, ssm);
         break;
     case SCAN_STAGE_SWITCH_TO_FDT_MODE_2:
-        goodix_send_mcu_switch_to_fdt_mode(dev, fdt_switch_state_mode_2,
-                                           sizeof(fdt_switch_state_mode_2),
-                                           NULL, check_none_cmd, ssm);
+        goodix_send_mcu_switch_to_fdt_mode(
+            dev, (guint8*) fdt_switch_state_mode_2,
+            sizeof(fdt_switch_state_mode_2), NULL, check_none_cmd, ssm);
         break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
-        goodix_send_mcu_switch_to_fdt_down(dev, fdt_switch_state_down,
+        goodix_send_mcu_switch_to_fdt_down(dev, (guint8*) fdt_switch_state_down,
                                            sizeof(fdt_switch_state_down), NULL,
                                            check_none_cmd, ssm);
         break;

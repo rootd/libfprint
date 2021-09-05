@@ -43,7 +43,6 @@ typedef struct {
 
     gboolean ack;
     gboolean reply;
-    gboolean tls;
 
     GoodixCmdCallback callback;
     gpointer user_data;
@@ -318,35 +317,6 @@ void goodix_receive_protocol(FpDevice *dev, guint8 *data, guint32 length) {
   goodix_receive_done(dev, payload, payload_len, NULL);
 }
 
-static void goodix_receive_tls(FpDevice* dev, guint8* data, guint32 length)
-{
-    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
-    FpiDeviceGoodixTlsPrivate* priv =
-        fpi_device_goodixtls_get_instance_private(self);
-    g_autofree guint8* payload = NULL;
-    guint16 payload_len;
-    gboolean valid_checksum; // TODO implement checksum.
-    guint8 flags;
-
-    if (!goodix_decode_pack(data, length, &flags, &payload, &payload_len,
-                            &valid_checksum)) {
-        fp_err("Incomplete, size tls: %d", length);
-        // Protocol is not full, we still need data.
-        // TODO implement protocol assembling.
-        return;
-    }
-
-    if (!priv->reply) {
-        fp_warn("Didn't excpect a reply for command: 0x%02x", priv->cmd);
-        return;
-    }
-
-    if (priv->ack)
-        fp_warn("Didn't got ACK for command: 0x%02x", priv->cmd);
-
-    goodix_receive_done(dev, payload, payload_len, NULL);
-}
-
 void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
   FpiDeviceGoodixTlsPrivate *priv =
@@ -375,9 +345,6 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
 
     case GOODIX_FLAGS_TLS:
         fp_dbg("Got TLS msg");
-        if (!priv->tls) {
-            fp_warn("unexpected tls packet");
-        }
         goodix_receive_done(dev, payload, payload_len, NULL);
 
         // TLS message sending it to TLS server.
@@ -439,9 +406,9 @@ void goodix_receive_data(FpDevice *dev) {
 
 // ---- GOODIX SEND SECTION START ----
 
-gboolean goodix_send_data(FpDevice *dev, guint8 *data, guint32 length,
-                          GDestroyNotify free_func, GError **error) {
-    fp_dbg("--- SEND DATA SIZE: %d ---", length);
+gboolean goodix_send_data(FpDevice* dev, guint8* data, guint32 length,
+                          GDestroyNotify free_func, GError** error)
+{
     FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
     FpiDeviceGoodixTlsClass* class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
 
@@ -1112,7 +1079,6 @@ enum goodix_tls_handshake_stages {
 static void on_tls_successfully_established(FpDevice* dev, gpointer user_data,
                                             GError* error)
 {
-
     fp_dbg("HANDSHAKE DONE");
     FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
     FpiDeviceGoodixTlsPrivate* priv =
@@ -1275,9 +1241,6 @@ void goodix_tls_read_image(FpDevice* dev, GoodixImageCallback callback,
                            gpointer user_data)
 {
     g_assert(callback);
-    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
-    FpiDeviceGoodixTlsPrivate* priv =
-        fpi_device_goodixtls_get_instance_private(self);
     GoodixCallbackInfo* cb_info = malloc(sizeof(GoodixImageCallback));
 
     cb_info->callback = G_CALLBACK(callback);
