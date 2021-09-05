@@ -737,19 +737,18 @@ void goodix_send_upload_config_mcu(FpDevice *dev, guint8 *config,
                                    guint16 length, GDestroyNotify free_func,
                                    GoodixSuccessCallback callback,
                                    gpointer user_data) {
-  GoodixCallbackInfo *cb_info;
-  ;
+    GoodixCallbackInfo* cb_info;
 
-  if (callback) {
-    cb_info = malloc(sizeof(GoodixCallbackInfo));
+    if (callback) {
+        cb_info = malloc(sizeof(GoodixCallbackInfo));
 
-    cb_info->callback = G_CALLBACK(callback);
-    cb_info->user_data = user_data;
+        cb_info->callback = G_CALLBACK(callback);
+        cb_info->user_data = user_data;
 
-    goodix_send_protocol(dev, GOODIX_CMD_UPLOAD_CONFIG_MCU, config, length,
-                         free_func, TRUE, GOODIX_TIMEOUT, TRUE,
-                         goodix_receive_success, cb_info);
-    return;
+        goodix_send_protocol(dev, GOODIX_CMD_UPLOAD_CONFIG_MCU, config, length,
+                             free_func, TRUE, GOODIX_TIMEOUT, TRUE,
+                             goodix_receive_success, cb_info);
+        return;
   }
 
   goodix_send_protocol(dev, GOODIX_CMD_UPLOAD_CONFIG_MCU, config, length,
@@ -1264,12 +1263,13 @@ static void goodix_tls_ready_image_handler(FpDevice* dev, guint8* data,
     const guint16 size = -1;
     guint8* buff = malloc(size);
     GError* err = NULL;
-    if (!goodix_tls_server_receive(priv->tls_hop, buff, size, &err)) {
+    int read_size = goodix_tls_server_receive(priv->tls_hop, buff, size, &err);
+    if (read_size <= 0) {
         callback(dev, NULL, 0, err, cb_info->user_data);
         return;
     }
 
-    callback(dev, buff, size, cb_info->user_data, NULL);
+    callback(dev, buff, read_size, cb_info->user_data, NULL);
 }
 
 void goodix_tls_read_image(FpDevice* dev, GoodixImageCallback callback,
