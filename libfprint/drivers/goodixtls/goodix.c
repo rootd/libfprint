@@ -365,6 +365,14 @@ void goodix_receive_pack(FpDevice *dev, guint8 *data, guint32 length) {
 
 void goodix_receive_data_cb(FpiUsbTransfer *transfer, FpDevice *dev,
                             gpointer user_data, GError *error) {
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+
+    if (g_cancellable_is_cancelled(priv->transfer_cancel_tkn)) {
+        fp_dbg("transfer cancelled, aborting read loop...");
+        return;
+    }
   if (error) {
     // Warn about error and free it.
     fp_warn("Receive data error: %s", error->message);
