@@ -54,6 +54,7 @@ typedef struct {
     GoodixCallbackInfo* tls_ready_callback;
 
     GCancellable* transfer_cancel_tkn;
+    gboolean inited;
 } FpiDeviceGoodixTlsPrivate;
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(FpiDeviceGoodixTls, fpi_device_goodixtls,
@@ -82,12 +83,7 @@ void goodix_receive_done(FpDevice *dev, guint8 *data, guint16 length,
 
   if (!(priv->ack || priv->reply)) return;
 
-  if (priv->timeout) g_clear_pointer(&priv->timeout, g_source_destroy);
-  priv->ack = FALSE;
-  priv->reply = FALSE;
-  priv->callback = NULL;
-  priv->user_data = NULL;
-
+  goodix_reset_state(dev);
   if (!error) fp_dbg("Completed command: 0x%02x", priv->cmd);
 
   if (callback) callback(dev, data, length, user_data, error);
@@ -405,6 +401,13 @@ void goodix_start_read_loop(FpDevice* dev)
     FpiDeviceGoodixTlsPrivate* priv =
         fpi_device_goodixtls_get_instance_private(self);
 
+    if (priv->inited) {
+        // Already going
+        return;
+    }
+    else {
+        priv->inited = TRUE;
+    }
     if (g_cancellable_is_cancelled(priv->transfer_cancel_tkn)) {
         g_cancellable_reset(priv->transfer_cancel_tkn);
     }
@@ -887,9 +890,8 @@ void goodix_send_request_tls_connection(FpDevice* dev,
         cb_info->user_data = user_data;
 
         goodix_send_protocol(dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                             (guint8*) &payload, sizeof(payload), NULL, TRUE,
-                             GOODIX_TIMEOUT, TRUE, goodix_receive_default,
-                             cb_info);
+                             (guint8*) &payload, sizeof(payload), NULL, TRUE, 0,
+                             TRUE, goodix_receive_default, cb_info);
         return;
     }
 
@@ -1024,6 +1026,19 @@ gboolean goodix_dev_init(FpDevice *dev, GError **error) {
   return g_usb_device_claim_interface(fpi_device_get_usb_device(dev),
                                       class->interface, 0, error);
 }
+void goodix_reset_state(FpDevice* dev)
+{
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+
+    if (priv->timeout)
+        g_clear_pointer(&priv->timeout, g_source_destroy);
+    priv->ack = FALSE;
+    priv->reply = FALSE;
+    priv->callback = NULL;
+    priv->user_data = NULL;
+}
 
 gboolean goodix_dev_deinit(FpDevice *dev, GError **error) {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
@@ -1034,6 +1049,10 @@ gboolean goodix_dev_deinit(FpDevice *dev, GError **error) {
   if (priv->timeout) g_source_destroy(priv->timeout);
   g_free(priv->data);
   g_cancellable_cancel(priv->transfer_cancel_tkn);
+  goodix_shutdown_tls(dev, error);
+
+  goodix_reset_state(dev);
+  priv->inited = FALSE;
 
   return g_usb_device_release_interface(fpi_device_get_usb_device(dev),
                                         class->interface, 0, error);
@@ -1243,6 +1262,21 @@ void goodix_tls(FpDevice* dev, GoodixNoneCallback callback, gpointer user_data)
     }
 
     goodix_tls_ready(s, err, self);
+}
+
+gboolean goodix_shutdown_tls(FpDevice* dev, GError** error)
+{
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+
+    if (priv->tls_hop) {
+        gboolean rs = goodix_tls_server_deinit(priv->tls_hop, error);
+        g_free(priv->tls_hop);
+        priv->tls_hop = NULL;
+        return rs;
+    }
+    return TRUE;
 }
 static void goodix_tls_ready_image_handler(FpDevice* dev, guint8* data,
                                            guint16 length, gpointer user_data,

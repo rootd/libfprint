@@ -443,6 +443,7 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
 
 static void scan_get_img(FpDevice* dev, FpiSsm* ssm)
 {
+    g_object_ref(fpi_ssm_get_device(ssm));
     goodix_tls_read_image(dev, scan_on_read_img, ssm);
 }
 
@@ -523,10 +524,10 @@ static void dev_deinit(FpImageDevice *img_dev) {
 }
 
 static void dev_activate(FpImageDevice *img_dev) {
-  FpDevice *dev = FP_DEVICE(img_dev);
+    FpDevice* dev = FP_DEVICE(img_dev);
 
-  fpi_ssm_start(fpi_ssm_new(dev, activate_run_state, ACTIVATE_NUM_STATES),
-                activate_complete);
+    fpi_ssm_start(fpi_ssm_new(dev, activate_run_state, ACTIVATE_NUM_STATES),
+                  activate_complete);
 }
 
 
@@ -542,7 +543,11 @@ static void dev_change_state(FpImageDevice* img_dev, FpiImageDeviceState state)
 }
 
 static void dev_deactivate(FpImageDevice *img_dev) {
-  fpi_image_device_deactivate_complete(img_dev, NULL);
+    FpDevice* dev = FP_DEVICE(img_dev);
+    goodix_reset_state(dev);
+    GError* error = NULL;
+    goodix_shutdown_tls(dev, &error);
+    fpi_image_device_deactivate_complete(img_dev, error);
 }
 
 // ---- DEV SECTION END ----

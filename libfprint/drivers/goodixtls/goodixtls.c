@@ -124,9 +124,7 @@ static void tls_config_ssl(SSL* ssl)
 static void* goodix_tls_init_serve(void* me)
 {
     GoodixTlsServer* self = me;
-    self->ssl_layer = SSL_new(self->ssl_ctx);
-    tls_config_ssl(self->ssl_layer);
-    SSL_set_fd(self->ssl_layer, self->sock_fd);
+
     fp_dbg("TLS server waiting to accept...");
     int retr = SSL_accept(self->ssl_layer);
     fp_dbg("TLS server accept done");
@@ -178,6 +176,10 @@ gboolean goodix_tls_server_init(GoodixTlsServer* self, GError** error)
                                                                    "context");
         return FALSE;
     }
+    self->ssl_layer = SSL_new(self->ssl_ctx);
+    tls_config_ssl(self->ssl_layer);
+    SSL_set_fd(self->ssl_layer, self->sock_fd);
+
     pthread_create(&self->serve_thread, 0, goodix_tls_init_serve, self);
 
     return TRUE;
