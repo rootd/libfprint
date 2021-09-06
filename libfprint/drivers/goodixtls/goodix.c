@@ -51,6 +51,8 @@ typedef struct {
     guint32 length;
 
     GoodixCallbackInfo* tls_ready_callback;
+
+    GCancellable* transfer_cancel_tkn;
 } FpiDeviceGoodixTlsPrivate;
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE(FpiDeviceGoodixTls, fpi_device_goodixtls,
@@ -392,12 +394,15 @@ void goodix_receive_data(FpDevice *dev) {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
   FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
   FpiUsbTransfer *transfer = fpi_usb_transfer_new(dev);
+  FpiDeviceGoodixTlsPrivate* priv =
+      fpi_device_goodixtls_get_instance_private(self);
 
   transfer->short_is_error = FALSE;
 
   fpi_usb_transfer_fill_bulk(transfer, class->ep_in, GOODIX_EP_IN_MAX_BUF_SIZE);
 
-  fpi_usb_transfer_submit(transfer, 0, NULL, goodix_receive_data_cb, NULL);
+  fpi_usb_transfer_submit(transfer, 0, priv->transfer_cancel_tkn,
+                          goodix_receive_data_cb, NULL);
 }
 
 // ---- GOODIX RECEIVE SECTION END ----
@@ -986,6 +991,7 @@ gboolean goodix_dev_init(FpDevice *dev, GError **error) {
   priv->user_data = NULL;
   priv->data = NULL;
   priv->length = 0;
+  priv->transfer_cancel_tkn = g_cancellable_new();
 
   return g_usb_device_claim_interface(fpi_device_get_usb_device(dev),
                                       class->interface, 0, error);
@@ -999,6 +1005,7 @@ gboolean goodix_dev_deinit(FpDevice *dev, GError **error) {
 
   if (priv->timeout) g_source_destroy(priv->timeout);
   g_free(priv->data);
+  g_cancellable_cancel(priv->transfer_cancel_tkn);
 
   return g_usb_device_release_interface(fpi_device_get_usb_device(dev),
                                         class->interface, 0, error);
