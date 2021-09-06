@@ -107,8 +107,7 @@ int goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
 {
     int retr = SSL_read(self->ssl_layer, data, length * sizeof(guint8));
     if (retr <= 0) {
-        g_set_error(error, g_io_channel_error_quark(), retr,
-                    ""); // err_from_ssl(retr);
+        *error = err_from_ssl();
     }
     return retr;
 }

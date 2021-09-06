@@ -54,6 +54,8 @@ struct _FpiDeviceGoodixTls511 {
   guint8* otp;
 
   GSList* frames;
+
+  guint8 empty_img[GOODIX511_FRAME_SIZE];
 };
 
 G_DECLARE_FINAL_TYPE(FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,
@@ -357,6 +359,7 @@ static void activate_complete(FpiSsm* ssm, FpDevice* dev, GError* error)
 // ---- SCAN SECTION START ----
 
 enum SCAN_STAGES {
+    SCAN_STAGE_CALIBRATE,
     SCAN_STAGE_SWITCH_TO_FDT_MODE,
     SCAN_STAGE_SWITCH_TO_FDT_DOWN,
     SCAN_STAGE_GET_IMG,
@@ -384,20 +387,50 @@ static unsigned char get_pix(struct fpi_frame_asmbl_ctx* ctx,
 // Bitdepth is 12, but we have to fit it in a byte
 static unsigned char squash(int v) { return v / 16; }
 
-static void decode_frame(guint8* raw_frame, GSList** frames)
+static void decode_frame(guint8 frame[GOODIX511_FRAME_SIZE],
+                         const guint8* raw_frame)
 {
-    const int frame_size = GOODIX511_FRAME_SIZE * 2;
-    struct fpi_frame* frame = g_malloc(frame_size + sizeof(struct fpi_frame));
 
-    guint8* pix = frame->data;
+    guint8* pix = frame;
     for (int i = 8; i != GOODIX511_RAW_FRAME_SIZE - 5; i += 6) {
-        guint8* chunk = raw_frame + i;
+        const guint8* chunk = raw_frame + i;
         *pix++ = squash(((chunk[0] & 0xf) << 8) + chunk[1]);
         *pix++ = squash((chunk[3] << 4) + (chunk[0] >> 4));
         *pix++ = squash(((chunk[5] & 0xf) << 8) + chunk[2]);
         *pix++ = squash((chunk[4] << 4) + (chunk[5] >> 4));
     }
-    *frames = g_slist_append(*frames, frame);
+}
+
+static void postprocess_frame(guint8 frame[GOODIX511_FRAME_SIZE],
+                              guint8 background[GOODIX511_FRAME_SIZE])
+{
+
+    for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
+        guint8* og_px = frame + i;
+        guint8 bg_px = background[i];
+        if (bg_px > *og_px) {
+            *og_px = 0;
+        }
+        else {
+            *og_px -= bg_px;
+        }
+        //*og_px -= (255 - bg_px);
+    }
+}
+typedef struct _frame_processing_info {
+    FpiDeviceGoodixTls511* dev;
+    GSList** frames;
+
+} frame_processing_info;
+
+static void process_frame(guint8* raw_frame, frame_processing_info* info)
+{
+    struct fpi_frame* frame =
+        g_malloc(GOODIX511_FRAME_SIZE + sizeof(struct fpi_frame));
+    decode_frame(frame->data, raw_frame);
+    postprocess_frame(frame->data, info->dev->empty_img);
+
+    *(info->frames) = g_slist_append(*(info->frames), frame);
 }
 
 static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
@@ -425,8 +458,9 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
         assembly_ctx.get_pixel = get_pix;
 
         GSList* frames = NULL;
+        frame_processing_info pinfo = {.dev = self, .frames = &frames};
 
-        g_slist_foreach(raw_frames, (GFunc) decode_frame, &frames);
+        g_slist_foreach(raw_frames, (GFunc) process_frame, &pinfo);
 
         fpi_do_movement_estimation(&assembly_ctx, frames);
         FpImage* img = fpi_assemble_frames(&assembly_ctx, frames);
@@ -441,9 +475,45 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
     }
 }
 
+enum scan_empty_img_state {
+    SCAN_EMPTY_NAV0,
+    SCAN_EMPTY_GET_IMG,
+
+    SCAN_EMPTY_NUM,
+};
+
+static void on_scan_empty_img(FpDevice* dev, guint8* data, guint16 length,
+                              gpointer ssm, GError* error)
+{
+    if (error) {
+        fpi_ssm_mark_failed(ssm, error);
+        return;
+    }
+    FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
+    decode_frame(self->empty_img, data);
+    fpi_ssm_next_state(ssm);
+}
+static void scan_empty_run(FpiSsm* ssm, FpDevice* dev)
+{
+
+    switch (fpi_ssm_get_cur_state(ssm)) {
+    case SCAN_EMPTY_NAV0:
+        goodix_send_nav_0(dev, check_none_cmd, ssm);
+        break;
+
+    case SCAN_EMPTY_GET_IMG:
+        goodix_tls_read_image(dev, on_scan_empty_img, ssm);
+        break;
+    }
+}
+
+static void scan_empty_img(FpDevice* dev, FpiSsm* ssm)
+{
+    fpi_ssm_start_subsm(ssm, fpi_ssm_new(dev, scan_empty_run, SCAN_EMPTY_NUM));
+}
+
 static void scan_get_img(FpDevice* dev, FpiSsm* ssm)
 {
-    g_object_ref(fpi_ssm_get_device(ssm));
     goodix_tls_read_image(dev, scan_on_read_img, ssm);
 }
 
@@ -462,6 +532,10 @@ static void scan_run_state(FpiSsm* ssm, FpDevice* dev)
     FpImageDevice* img_dev = FP_IMAGE_DEVICE(dev);
 
     switch (fpi_ssm_get_cur_state(ssm)) {
+    case SCAN_STAGE_CALIBRATE:
+        scan_empty_img(dev, ssm);
+        break;
+
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:
         goodix_send_mcu_switch_to_fdt_mode(dev, (guint8*) fdt_switch_state_mode,
                                            sizeof(fdt_switch_state_mode), NULL,
