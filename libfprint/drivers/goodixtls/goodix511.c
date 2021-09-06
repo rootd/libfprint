@@ -581,5 +581,4 @@ static void fpi_device_goodixtls511_class_init(
   img_dev_class->deactivate = dev_deactivate;
 
   fpi_device_class_auto_initialize_features(dev_class);
-  dev_class->features &= ~FP_DEVICE_FEATURE_VERIFY;
 }
