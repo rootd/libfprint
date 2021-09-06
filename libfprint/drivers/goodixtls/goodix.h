@@ -114,6 +114,7 @@ void goodix_receive_timeout_cb(FpDevice *dev, gpointer user_data);
 
 void goodix_receive_data(FpDevice *dev);
 
+void goodix_start_read_loop(FpDevice* dev);
 // ---- GOODIX RECEIVE SECTION END ----
 
 // -----------------------------------------------------------------------------
@@ -225,6 +226,7 @@ void goodix_send_read_otp(FpDevice* dev, GoodixDefaultCallback callback,
 gboolean goodix_dev_init(FpDevice *dev, GError **error);
 
 gboolean goodix_dev_deinit(FpDevice *dev, GError **error);
+
 
 // ---- DEV SECTION END ----
 

@@ -281,7 +281,7 @@ static void activate_run_state(FpiSsm* ssm, FpDevice* dev)
     case ACTIVATE_READ_AND_NOP:
         // Nop seems to clear the previous command buffer. But we are
         // unable to do so.
-        goodix_receive_data(dev);
+        goodix_start_read_loop(dev);
         goodix_send_nop(dev, check_none, ssm);
         break;
 

@@ -17,6 +17,7 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
+#include "fpi-log.h"
 #include "fpi-ssm.h"
 #include "fpi-usb-transfer.h"
 #define FP_COMPONENT "goodixtls"
@@ -390,19 +391,34 @@ void goodix_receive_timeout_cb(FpDevice *dev, gpointer user_data) {
   goodix_receive_done(dev, NULL, 0, error);
 }
 
-void goodix_receive_data(FpDevice *dev) {
-  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
-  FpiUsbTransfer *transfer = fpi_usb_transfer_new(dev);
-  FpiDeviceGoodixTlsPrivate* priv =
-      fpi_device_goodixtls_get_instance_private(self);
+void goodix_start_read_loop(FpDevice* dev)
+{
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
 
-  transfer->short_is_error = FALSE;
+    if (g_cancellable_is_cancelled(priv->transfer_cancel_tkn)) {
+        g_cancellable_reset(priv->transfer_cancel_tkn);
+    }
 
-  fpi_usb_transfer_fill_bulk(transfer, class->ep_in, GOODIX_EP_IN_MAX_BUF_SIZE);
+    goodix_receive_data(dev);
+}
 
-  fpi_usb_transfer_submit(transfer, 0, priv->transfer_cancel_tkn,
-                          goodix_receive_data_cb, NULL);
+void goodix_receive_data(FpDevice * dev)
+{
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsClass* class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
+    FpiUsbTransfer* transfer = fpi_usb_transfer_new(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+
+    transfer->short_is_error = FALSE;
+
+    fpi_usb_transfer_fill_bulk(transfer, class->ep_in,
+                                GOODIX_EP_IN_MAX_BUF_SIZE);
+
+    fpi_usb_transfer_submit(transfer, 0, priv->transfer_cancel_tkn,
+                            goodix_receive_data_cb, NULL);
 }
 
 // ---- GOODIX RECEIVE SECTION END ----
@@ -411,8 +427,8 @@ void goodix_receive_data(FpDevice *dev) {
 
 // ---- GOODIX SEND SECTION START ----
 
-gboolean goodix_send_data(FpDevice* dev, guint8* data, guint32 length,
-                          GDestroyNotify free_func, GError** error)
+gboolean goodix_send_data(FpDevice * dev, guint8 * data, guint32 length,
+                          GDestroyNotify free_func, GError * *error)
 {
     FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
     FpiDeviceGoodixTlsClass* class = FPI_DEVICE_GOODIXTLS_GET_CLASS(self);
@@ -424,73 +440,77 @@ gboolean goodix_send_data(FpDevice* dev, guint8* data, guint32 length,
         fpi_usb_transfer_fill_bulk_full(transfer, class->ep_out, data + i,
                                         GOODIX_EP_OUT_MAX_BUF_SIZE, NULL);
 
-        if (!fpi_usb_transfer_submit_sync(transfer, GOODIX_TIMEOUT, error)) {
+        if (!fpi_usb_transfer_submit_sync(transfer, GOODIX_TIMEOUT,
+                                          error)) {
             if (free_func)
                 free_func(data);
             fpi_usb_transfer_unref(transfer);
             return FALSE;
         }
         fpi_usb_transfer_unref(transfer);
-  }
+    }
 
-  if (free_func)
-      free_func(data);
-  return TRUE;
+    if (free_func)
+        free_func(data);
+    return TRUE;
 }
 
-gboolean goodix_send_pack(FpDevice *dev, guint8 flags, guint8 *payload,
+gboolean goodix_send_pack(FpDevice * dev, guint8 flags, guint8 * payload,
                           guint16 length, GDestroyNotify free_func,
-                          GError **error) {
-  guint8 *data;
-  guint32 data_len;
+                          GError * *error)
+{
+    guint8* data;
+    guint32 data_len;
 
-  goodix_encode_pack(flags, payload, length, TRUE, &data, &data_len);
-  if (free_func) free_func(payload);
+    goodix_encode_pack(flags, payload, length, TRUE, &data, &data_len);
+    if (free_func)
+        free_func(payload);
 
-  return goodix_send_data(dev, data, data_len, g_free, error);
+    return goodix_send_data(dev, data, data_len, g_free, error);
 }
 
-void goodix_send_protocol(FpDevice *dev, guint8 cmd, guint8 *payload,
-                          guint16 length, GDestroyNotify free_func,
-                          gboolean calc_checksum, guint timeout_ms,
-                          gboolean reply, GoodixCmdCallback callback,
-                          gpointer user_data) {
-  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiDeviceGoodixTlsPrivate *priv =
+void goodix_send_protocol(
+      FpDevice * dev, guint8 cmd, guint8 * payload, guint16 length,
+      GDestroyNotify free_func, gboolean calc_checksum, guint timeout_ms,
+      gboolean reply, GoodixCmdCallback callback, gpointer user_data)
+  {
+  FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+  FpiDeviceGoodixTlsPrivate* priv =
       fpi_device_goodixtls_get_instance_private(self);
-  GError *error = NULL;
-  guint8 *data;
+  GError* error = NULL;
+  guint8* data;
   guint32 data_len;
 
-  if (priv->ack || priv->reply || priv->timeout) {
-    // A command is already running.
-    fp_warn("A command is already running: 0x%02x", priv->cmd);
-    if (free_func) free_func(payload);
-    return;
-  }
+    if (priv->ack || priv->reply || priv->timeout) {
+        // A command is already running.
+        fp_warn("A command is already running: 0x%02x", priv->cmd);
+        if (free_func)
+            free_func(payload);
+        return;
+    }
 
-  fp_dbg("Running command: 0x%02x", cmd);
+    fp_dbg("Running command: 0x%02x", cmd);
 
-  if (timeout_ms)
-    priv->timeout = fpi_device_add_timeout(
-        dev, timeout_ms, goodix_receive_timeout_cb, NULL, NULL);
-  priv->cmd = cmd;
-  priv->ack = TRUE;
-  priv->reply = reply;
-  priv->callback = callback;
-  priv->user_data = user_data;
+    if (timeout_ms)
+        priv->timeout = fpi_device_add_timeout(
+            dev, timeout_ms, goodix_receive_timeout_cb, NULL, NULL);
+    priv->cmd = cmd;
+    priv->ack = TRUE;
+    priv->reply = reply;
+    priv->callback = callback;
+    priv->user_data = user_data;
 
-  goodix_encode_protocol(cmd, payload, length, calc_checksum, FALSE, &data,
-                         &data_len);
-  if (free_func) free_func(payload);
+    goodix_encode_protocol(cmd, payload, length, calc_checksum, FALSE,
+                           &data, &data_len);
+    if (free_func)
+        free_func(payload);
 
-  if (!goodix_send_pack(dev, GOODIX_FLAGS_MSG_PROTOCOL, data, data_len, g_free,
-                        &error)) {
-    goodix_receive_done(dev, NULL, 0, error);
-    return;
-  };
+    if (!goodix_send_pack(dev, GOODIX_FLAGS_MSG_PROTOCOL, data, data_len,
+                          g_free, &error)) {
+        goodix_receive_done(dev, NULL, 0, error);
+        return;
+    };
 }
-
 void goodix_send_nop(FpDevice *dev, GoodixNoneCallback callback,
                      gpointer user_data) {
   GoodixNop payload = {.unknown = 0x00000000};
