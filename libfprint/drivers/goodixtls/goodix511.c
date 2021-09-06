@@ -48,6 +48,8 @@
 #define GOODIX511_RAW_FRAME_SIZE 8 + GOODIX511_FRAME_SIZE / 4 * 6 + 5
 #define GOODIX511_CAP_FRAMES 3 // Number of frames we capture per swipe
 
+typedef unsigned short Goodix511Pix;
+
 struct _FpiDeviceGoodixTls511 {
   FpiDeviceGoodixTls parent;
 
@@ -55,7 +57,7 @@ struct _FpiDeviceGoodixTls511 {
 
   GSList* frames;
 
-  guint8 empty_img[GOODIX511_FRAME_SIZE];
+  Goodix511Pix empty_img[GOODIX511_FRAME_SIZE];
 };
 
 G_DECLARE_FINAL_TYPE(FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,
@@ -387,34 +389,53 @@ static unsigned char get_pix(struct fpi_frame_asmbl_ctx* ctx,
 // Bitdepth is 12, but we have to fit it in a byte
 static unsigned char squash(int v) { return v / 16; }
 
-static void decode_frame(guint8 frame[GOODIX511_FRAME_SIZE],
+static void decode_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
                          const guint8* raw_frame)
 {
 
-    guint8* pix = frame;
+    Goodix511Pix* pix = frame;
     for (int i = 8; i != GOODIX511_RAW_FRAME_SIZE - 5; i += 6) {
         const guint8* chunk = raw_frame + i;
-        *pix++ = squash(((chunk[0] & 0xf) << 8) + chunk[1]);
-        *pix++ = squash((chunk[3] << 4) + (chunk[0] >> 4));
-        *pix++ = squash(((chunk[5] & 0xf) << 8) + chunk[2]);
-        *pix++ = squash((chunk[4] << 4) + (chunk[5] >> 4));
+        *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
+        *pix++ = (chunk[3] << 4) + (chunk[0] >> 4);
+        *pix++ = ((chunk[5] & 0xf) << 8) + chunk[2];
+        *pix++ = (chunk[4] << 4) + (chunk[5] >> 4);
     }
 }
 
-static void postprocess_frame(guint8 frame[GOODIX511_FRAME_SIZE],
-                              guint8 background[GOODIX511_FRAME_SIZE])
+/**
+ * @brief Squashes the 12 bit pixels of a raw frame into the 4 bit pixels used
+ * by libfprint
+ *
+ * @param frame
+ * @param squashed
+ */
+static void squash_frame(Goodix511Pix* frame, guint8* squashed)
+{
+    for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
+        squashed[i] = squash(frame[i]);
+    }
+}
+
+/**
+ * @brief Subtracts the background from the frame
+ *
+ * @param frame
+ * @param background
+ */
+static void postprocess_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
+                              Goodix511Pix background[GOODIX511_FRAME_SIZE])
 {
 
     for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
-        guint8* og_px = frame + i;
-        guint8 bg_px = background[i];
+        Goodix511Pix* og_px = frame + i;
+        Goodix511Pix bg_px = background[i];
         if (bg_px > *og_px) {
             *og_px = 0;
         }
         else {
             *og_px -= bg_px;
         }
-        //*og_px -= (255 - bg_px);
     }
 }
 typedef struct _frame_processing_info {
@@ -423,14 +444,21 @@ typedef struct _frame_processing_info {
 
 } frame_processing_info;
 
-static void process_frame(guint8* raw_frame, frame_processing_info* info)
+static void process_frame(Goodix511Pix* raw_frame, frame_processing_info* info)
 {
     struct fpi_frame* frame =
         g_malloc(GOODIX511_FRAME_SIZE + sizeof(struct fpi_frame));
-    decode_frame(frame->data, raw_frame);
-    postprocess_frame(frame->data, info->dev->empty_img);
+    postprocess_frame(raw_frame, info->dev->empty_img);
+    squash_frame(raw_frame, frame->data);
 
     *(info->frames) = g_slist_append(*(info->frames), frame);
+}
+
+static void save_frame(FpiDeviceGoodixTls511* self, guint8* raw)
+{
+    Goodix511Pix* frame = malloc(GOODIX511_FRAME_SIZE * sizeof(Goodix511Pix));
+    decode_frame(frame, raw);
+    self->frames = g_slist_append(self->frames, frame);
 }
 
 static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
@@ -442,12 +470,11 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
     }
 
     FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
+    save_frame(self, data);
     if (g_slist_length(self->frames) <= GOODIX511_CAP_FRAMES) {
-        self->frames = g_slist_append(self->frames, data);
         fpi_ssm_jump_to_state(ssm, SCAN_STAGE_SWITCH_TO_FDT_MODE);
     }
     else {
-        self->frames = g_slist_append(self->frames, data);
         GSList* raw_frames = g_slist_nth(self->frames, 1);
 
         FpImageDevice* img_dev = FP_IMAGE_DEVICE(dev);
