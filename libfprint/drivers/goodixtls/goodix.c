@@ -1283,10 +1283,11 @@ static void goodix_tls_ready_image_handler(FpDevice* dev, guint8* data,
                                            GError* error)
 {
 
-    g_autofree GoodixCallbackInfo* cb_info = user_data;
+    GoodixCallbackInfo* cb_info = user_data;
     GoodixImageCallback callback = (GoodixImageCallback) cb_info->callback;
     if (error) {
-        callback(dev, NULL, 0, error, cb_info->user_data);
+        callback(dev, NULL, 0, cb_info->user_data, error);
+        g_free(cb_info);
         return;
     }
     FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
@@ -1299,11 +1300,13 @@ static void goodix_tls_ready_image_handler(FpDevice* dev, guint8* data,
     GError* err = NULL;
     int read_size = goodix_tls_server_receive(priv->tls_hop, buff, size, &err);
     if (read_size <= 0) {
-        callback(dev, NULL, 0, err, cb_info->user_data);
+        callback(dev, NULL, 0, cb_info->user_data, err);
+        g_free(cb_info);
         return;
     }
 
     callback(dev, buff, read_size, cb_info->user_data, NULL);
+    g_free(cb_info);
 }
 
 void goodix_tls_read_image(FpDevice* dev, GoodixImageCallback callback,
