@@ -364,7 +364,6 @@ static void activate_complete(FpiSsm* ssm, FpDevice* dev, GError* error)
 // ---- SCAN SECTION START ----
 
 enum SCAN_STAGES {
-    SCAN_STAGE_CALIBRATE,
     SCAN_STAGE_SWITCH_TO_FDT_MODE,
     SCAN_STAGE_SWITCH_TO_FDT_DOWN,
     SCAN_STAGE_GET_IMG,
@@ -623,9 +622,6 @@ static void scan_run_state(FpiSsm* ssm, FpDevice* dev)
     FpImageDevice* img_dev = FP_IMAGE_DEVICE(dev);
 
     switch (fpi_ssm_get_cur_state(ssm)) {
-    case SCAN_STAGE_CALIBRATE:
-        scan_empty_img(dev, ssm);
-        break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:
         goodix_send_mcu_switch_to_fdt_mode(dev, (guint8*) fdt_switch_state_mode,
