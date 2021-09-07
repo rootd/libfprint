@@ -28,6 +28,7 @@
 #include "glibconfig.h"
 #include "gusb/gusb-device.h"
 #include <stdio.h>
+#include <stdlib.h>
 #define FP_COMPONENT "goodixtls511"
 
 #include <glib.h>
@@ -40,13 +41,15 @@
 
 #include <math.h>
 
-#define GOODIX511_WIDTH 88
+#define GOODIX511_WIDTH 64
 #define GOODIX511_HEIGHT 80
-#define GOODIX511_FRAME_SIZE 80 * 88
+#define GOODIX511_SCAN_WIDTH 88
+#define GOODIX511_FRAME_SIZE (GOODIX511_WIDTH * GOODIX511_HEIGHT)
 // For every 4 pixels there are 6 bytes and there are 8 extra start bytes and 5
 // extra end
-#define GOODIX511_RAW_FRAME_SIZE 8 + GOODIX511_FRAME_SIZE / 4 * 6 + 5
-#define GOODIX511_CAP_FRAMES 3 // Number of frames we capture per swipe
+#define GOODIX511_RAW_FRAME_SIZE                                               \
+    8 + (GOODIX511_HEIGHT * GOODIX511_SCAN_WIDTH) / 4 * 6 + 5
+#define GOODIX511_CAP_FRAMES 5 // Number of frames we capture per swipe
 
 typedef unsigned short Goodix511Pix;
 
@@ -383,7 +386,7 @@ static unsigned char get_pix(struct fpi_frame_asmbl_ctx* ctx,
                              struct fpi_frame* frame, unsigned int x,
                              unsigned int y)
 {
-    return frame->data[x + y * ctx->frame_width];
+    return frame->data[x + y * GOODIX511_WIDTH];
 }
 
 // Bitdepth is 12, but we have to fit it in a byte
@@ -393,7 +396,8 @@ static void decode_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
                          const guint8* raw_frame)
 {
 
-    Goodix511Pix* pix = frame;
+    Goodix511Pix uncropped[GOODIX511_SCAN_WIDTH * GOODIX511_HEIGHT];
+    Goodix511Pix* pix = uncropped;
     for (int i = 8; i != GOODIX511_RAW_FRAME_SIZE - 5; i += 6) {
         const guint8* chunk = raw_frame + i;
         *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
@@ -401,19 +405,50 @@ static void decode_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
         *pix++ = ((chunk[5] & 0xf) << 8) + chunk[2];
         *pix++ = (chunk[4] << 4) + (chunk[5] >> 4);
     }
+    for (int y = 0; y != GOODIX511_HEIGHT; ++y) {
+        for (int x = 0; x != GOODIX511_WIDTH; ++x) {
+            const int idx = x + y * GOODIX511_SCAN_WIDTH;
+            frame[x + y * GOODIX511_WIDTH] = uncropped[idx];
+        }
+    }
+}
+static int goodix_cmp_short(const void* a, const void* b)
+{
+    return (int) (*(short*) a - *(short*) b);
 }
 
 /**
  * @brief Squashes the 12 bit pixels of a raw frame into the 4 bit pixels used
- * by libfprint
+ * by libfprint.
+ * @details Borrowed from the elan driver. We reduce frames to
+ * within the max and min.
  *
  * @param frame
  * @param squashed
  */
-static void squash_frame(Goodix511Pix* frame, guint8* squashed)
+static void squash_frame_linear(Goodix511Pix* frame, guint8* squashed)
 {
+    Goodix511Pix min = 0xffff;
+    Goodix511Pix max = 0;
+
     for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
-        squashed[i] = squash(frame[i]);
+        const Goodix511Pix pix = frame[i];
+        if (pix < min) {
+            min = pix;
+        }
+        if (pix > max) {
+            max = pix;
+        }
+    }
+
+    for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
+        const Goodix511Pix pix = frame[i];
+        if (pix - min == 0 || max - min == 0) {
+            squashed[i] = 0;
+        }
+        else {
+            squashed[i] = (pix - min) * 0xff / (max - min);
+        }
     }
 }
 
@@ -423,21 +458,28 @@ static void squash_frame(Goodix511Pix* frame, guint8* squashed)
  * @param frame
  * @param background
  */
-static void postprocess_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
-                              Goodix511Pix background[GOODIX511_FRAME_SIZE])
+static gboolean postprocess_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
+                                  Goodix511Pix background[GOODIX511_FRAME_SIZE])
 {
-
+    int sum = 0;
     for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
         Goodix511Pix* og_px = frame + i;
-        Goodix511Pix bg_px = background[i];
+        Goodix511Pix bg_px = background[i] / 2;
         if (bg_px > *og_px) {
             *og_px = 0;
         }
         else {
             *og_px -= bg_px;
         }
+        sum += *og_px;
     }
+    if (sum == 0) {
+        fp_warn("frame darker than background, finger on scanner during "
+                "calibration?");
+    }
+    return sum != 0;
 }
+
 typedef struct _frame_processing_info {
     FpiDeviceGoodixTls511* dev;
     GSList** frames;
@@ -449,7 +491,7 @@ static void process_frame(Goodix511Pix* raw_frame, frame_processing_info* info)
     struct fpi_frame* frame =
         g_malloc(GOODIX511_FRAME_SIZE + sizeof(struct fpi_frame));
     postprocess_frame(raw_frame, info->dev->empty_img);
-    squash_frame(raw_frame, frame->data);
+    squash_frame_linear(raw_frame, frame->data);
 
     *(info->frames) = g_slist_append(*(info->frames), frame);
 }
@@ -481,7 +523,7 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
         struct fpi_frame_asmbl_ctx assembly_ctx;
         assembly_ctx.frame_width = GOODIX511_WIDTH;
         assembly_ctx.frame_height = GOODIX511_HEIGHT;
-        assembly_ctx.image_width = GOODIX511_WIDTH;
+        assembly_ctx.image_width = GOODIX511_WIDTH * 3 / 2;
         assembly_ctx.get_pixel = get_pix;
 
         GSList* frames = NULL;
@@ -494,6 +536,8 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
         img->flags |= FPI_IMAGE_PARTIAL;
 
         g_slist_free_full(frames, g_free);
+        g_slist_free_full(self->frames, g_free);
+        self->frames = g_slist_alloc();
 
         fpi_image_device_image_captured(img_dev, img);
         fpi_image_device_report_finger_status(img_dev, FALSE);
@@ -643,11 +687,20 @@ static void dev_change_state(FpImageDevice* img_dev, FpiImageDeviceState state)
     }
 }
 
+static void goodix511_reset_state(FpiDeviceGoodixTls511* self)
+{
+    /*if (self->otp) {
+        free(self->otp);
+        self->otp = NULL;
+    }*/
+}
+
 static void dev_deactivate(FpImageDevice *img_dev) {
     FpDevice* dev = FP_DEVICE(img_dev);
     goodix_reset_state(dev);
     GError* error = NULL;
     goodix_shutdown_tls(dev, &error);
+    goodix511_reset_state(FPI_DEVICE_GOODIXTLS511(img_dev));
     fpi_image_device_deactivate_complete(img_dev, error);
 }
 
@@ -673,7 +726,7 @@ static void fpi_device_goodixtls511_class_init(
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = id_table;
 
-  dev_class->scan_type = FP_SCAN_TYPE_SWIPE;
+  dev_class->scan_type = FP_SCAN_TYPE_PRESS;
 
   // TODO
   img_dev_class->bz3_threshold = 24;
