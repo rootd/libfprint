@@ -533,7 +533,7 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
 
         fpi_do_movement_estimation(&assembly_ctx, frames);
         FpImage* img = fpi_assemble_frames(&assembly_ctx, frames);
-        img->flags |= FPI_IMAGE_PARTIAL;
+        img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_REMOVE_LESS_MINUTIAE;
 
         g_slist_free_full(frames, g_free);
         g_slist_free_full(self->frames, g_free);
