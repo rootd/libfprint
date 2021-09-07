@@ -49,7 +49,7 @@
 // extra end
 #define GOODIX511_RAW_FRAME_SIZE                                               \
     8 + (GOODIX511_HEIGHT * GOODIX511_SCAN_WIDTH) / 4 * 6 + 5
-#define GOODIX511_CAP_FRAMES 5 // Number of frames we capture per swipe
+#define GOODIX511_CAP_FRAMES 20 // Number of frames we capture per swipe
 
 typedef unsigned short Goodix511Pix;
 
@@ -417,6 +417,23 @@ static int goodix_cmp_short(const void* a, const void* b)
     return (int) (*(short*) a - *(short*) b);
 }
 
+static void rotate_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE])
+{
+    Goodix511Pix buff[GOODIX511_FRAME_SIZE];
+
+    for (int y = 0; y != GOODIX511_HEIGHT; ++y) {
+        for (int x = 0; x != GOODIX511_WIDTH; ++x) {
+            buff[x * GOODIX511_WIDTH + y] = frame[x + y * GOODIX511_WIDTH];
+        }
+    }
+    memcpy(frame, buff, GOODIX511_FRAME_SIZE);
+}
+static void squash_frame(Goodix511Pix* frame, guint8* squashed)
+{
+    for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
+        squashed[i] = squash(frame[i]);
+    }
+}
 /**
  * @brief Squashes the 12 bit pixels of a raw frame into the 4 bit pixels used
  * by libfprint.
@@ -464,14 +481,16 @@ static gboolean postprocess_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
     int sum = 0;
     for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
         Goodix511Pix* og_px = frame + i;
-        Goodix511Pix bg_px = background[i] / 2;
-        if (bg_px > *og_px) {
-            *og_px = 0;
-        }
-        else {
-            *og_px -= bg_px;
-        }
-        sum += *og_px;
+        Goodix511Pix bg_px = // background[i];
+            /*if (bg_px > *og_px) {
+                *og_px = 0;
+            }
+            else {
+                *og_px -= bg_px;
+            }*/
+            //*og_px = MAX(bg_px - *og_px, 0);
+            //* og_px = MAX(*og_px - bg_px, 0);
+            sum += *og_px;
     }
     if (sum == 0) {
         fp_warn("frame darker than background, finger on scanner during "
@@ -491,7 +510,7 @@ static void process_frame(Goodix511Pix* raw_frame, frame_processing_info* info)
     struct fpi_frame* frame =
         g_malloc(GOODIX511_FRAME_SIZE + sizeof(struct fpi_frame));
     postprocess_frame(raw_frame, info->dev->empty_img);
-    squash_frame_linear(raw_frame, frame->data);
+    squash_frame(raw_frame, frame->data);
 
     *(info->frames) = g_slist_append(*(info->frames), frame);
 }
@@ -523,21 +542,22 @@ static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
         struct fpi_frame_asmbl_ctx assembly_ctx;
         assembly_ctx.frame_width = GOODIX511_WIDTH;
         assembly_ctx.frame_height = GOODIX511_HEIGHT;
-        assembly_ctx.image_width = GOODIX511_WIDTH * 3 / 2;
+        assembly_ctx.image_width = GOODIX511_WIDTH * 2;
         assembly_ctx.get_pixel = get_pix;
 
         GSList* frames = NULL;
         frame_processing_info pinfo = {.dev = self, .frames = &frames};
 
         g_slist_foreach(raw_frames, (GFunc) process_frame, &pinfo);
+        // frames = g_slist_reverse(frames);
 
         fpi_do_movement_estimation(&assembly_ctx, frames);
         FpImage* img = fpi_assemble_frames(&assembly_ctx, frames);
-        img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_REMOVE_LESS_MINUTIAE;
+        img->flags |= FPI_IMAGE_PARTIAL;
 
         g_slist_free_full(frames, g_free);
-        g_slist_free_full(self->frames, g_free);
-        self->frames = g_slist_alloc();
+        // g_slist_free_full(self->frames, g_free);
+        // self->frames = g_slist_alloc();
 
         fpi_image_device_image_captured(img_dev, img);
         fpi_image_device_report_finger_status(img_dev, FALSE);
