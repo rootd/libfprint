@@ -49,7 +49,7 @@
 // extra end
 #define GOODIX511_RAW_FRAME_SIZE                                               \
     8 + (GOODIX511_HEIGHT * GOODIX511_SCAN_WIDTH) / 4 * 6 + 5
-#define GOODIX511_CAP_FRAMES 20 // Number of frames we capture per swipe
+#define GOODIX511_CAP_FRAMES 40 // Number of frames we capture per swipe
 
 typedef unsigned short Goodix511Pix;
 
@@ -707,13 +707,7 @@ static void dev_change_state(FpImageDevice* img_dev, FpiImageDeviceState state)
     }
 }
 
-static void goodix511_reset_state(FpiDeviceGoodixTls511* self)
-{
-    /*if (self->otp) {
-        free(self->otp);
-        self->otp = NULL;
-    }*/
-}
+static void goodix511_reset_state(FpiDeviceGoodixTls511* self) {}
 
 static void dev_deactivate(FpImageDevice *img_dev) {
     FpDevice* dev = FP_DEVICE(img_dev);
