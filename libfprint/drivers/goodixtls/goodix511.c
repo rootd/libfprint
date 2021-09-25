@@ -85,6 +85,41 @@ enum activate_states {
     ACTIVATE_NUM_STATES,
 };
 
+#ifdef GOODIX511_DUMP_FRAMES
+static gboolean save_image_to_pgm(FpImage* img, const char* path)
+{
+    FILE* fd = fopen(path, "w");
+    size_t write_size;
+    const guchar* data = fp_image_get_data(img, &write_size);
+    int r;
+
+    if (!fd) {
+        g_warning("could not open '%s' for writing: %d", path, errno);
+        return FALSE;
+    }
+
+    r = fprintf(fd, "P5 %d %d 255\n", fp_image_get_width(img),
+                fp_image_get_height(img));
+    if (r < 0) {
+        fclose(fd);
+        g_critical("pgm header write failed, error %d", r);
+        return FALSE;
+    }
+
+    r = fwrite(data, 1, write_size, fd);
+    if (r < write_size) {
+        fclose(fd);
+        g_critical("short write (%d)", r);
+        return FALSE;
+    }
+
+    fclose(fd);
+    g_debug("written to '%s'", path);
+
+    return TRUE;
+}
+#endif
+
 static void check_none(FpDevice *dev, gpointer user_data, GError *error) {
   if (error) {
     fpi_ssm_mark_failed(user_data, error);
@@ -481,21 +516,22 @@ static gboolean postprocess_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
     int sum = 0;
     for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i) {
         Goodix511Pix* og_px = frame + i;
-        Goodix511Pix bg_px = // background[i];
-            /*if (bg_px > *og_px) {
-                *og_px = 0;
-            }
-            else {
-                *og_px -= bg_px;
-            }*/
-            //*og_px = MAX(bg_px - *og_px, 0);
-            //* og_px = MAX(*og_px - bg_px, 0);
-            sum += *og_px;
+        Goodix511Pix bg_px = background[i];
+
+        if (*og_px >= bg_px) {
+            *og_px = 4095;
+        }
+        else {
+            *og_px -= bg_px;
+        }
+
+        sum += *og_px;
     }
     if (sum == 0) {
         fp_warn("frame darker than background, finger on scanner during "
                 "calibration?");
     }
+
     return sum != 0;
 }
 
@@ -510,7 +546,7 @@ static void process_frame(Goodix511Pix* raw_frame, frame_processing_info* info)
     struct fpi_frame* frame =
         g_malloc(GOODIX511_FRAME_SIZE + sizeof(struct fpi_frame));
     postprocess_frame(raw_frame, info->dev->empty_img);
-    squash_frame(raw_frame, frame->data);
+    squash_frame_linear(raw_frame, frame->data);
 
     *(info->frames) = g_slist_append(*(info->frames), frame);
 }
@@ -520,6 +556,14 @@ static void save_frame(FpiDeviceGoodixTls511* self, guint8* raw)
     Goodix511Pix* frame = malloc(GOODIX511_FRAME_SIZE * sizeof(Goodix511Pix));
     decode_frame(frame, raw);
     self->frames = g_slist_append(self->frames, frame);
+#ifdef GOODIX511_DUMP_FRAMES
+    char buff[2014];
+    snprintf(buff, sizeof(buff), "cut2/f_%d.pgm", g_slist_length(self->frames));
+    FpImage* img = fp_image_new(GOODIX511_WIDTH, GOODIX511_HEIGHT);
+    postprocess_frame(frame, self->empty_img);
+    squash_frame_linear(frame, img->data);
+    save_image_to_pgm(img, buff);
+#endif
 }
 
 static void scan_on_read_img(FpDevice* dev, guint8* data, guint16 len,
@@ -582,6 +626,11 @@ static void on_scan_empty_img(FpDevice* dev, guint8* data, guint16 length,
     }
     FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
     decode_frame(self->empty_img, data);
+#ifdef GOODIX511_DUMP_FRAMES
+    FpImage* bgk = fp_image_new(GOODIX511_WIDTH, GOODIX511_HEIGHT);
+    squash_frame(self->empty_img, bgk->data);
+    save_image_to_pgm(bgk, "./background.pgm");
+#endif
     fpi_ssm_next_state(ssm);
 }
 static void scan_empty_run(FpiSsm* ssm, FpDevice* dev)
