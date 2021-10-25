@@ -1,6 +1,6 @@
 include:
   - local: '.gitlab-ci/libfprint-templates.yaml'
-  - project: 'wayland/ci-templates'
+  - project: 'freedesktop/ci-templates'
     ref: master
     file: '/templates/fedora.yml'
   - remote: 'https://gitlab.gnome.org/GNOME/citemplates/-/raw/master/flatpak/flatpak_ci_initiative.yml'
@@ -9,6 +9,7 @@ variables:
   extends: .libfprint_common_variables
   FDO_DISTRIBUTION_TAG: latest
   FDO_DISTRIBUTION_VERSION: rawhide
+  FDO_UPSTREAM_REPO: "libfprint/$CI_PROJECT_NAME"
   FEDORA_IMAGE: "$CI_REGISTRY/libfprint/$CI_PROJECT_NAME/fedora/$FDO_DISTRIBUTION_VERSION:$FDO_DISTRIBUTION_TAG"
   BUNDLE: "org.freedesktop.libfprint.Demo.flatpak"
   LAST_ABI_BREAK: "056ea541ddc97f5806cffbd99a12dc87e4da3546"
@@ -19,7 +20,7 @@ stages:
   - test
   - flatpak
 
-image: "$FEDORA_IMAGE"
+image: $FEDORA_IMAGE
 
 .build_one_driver_template: &build_one_driver
   script:
@@ -69,6 +70,7 @@ test:
     - cat _build/meson-logs/coverage.txt
   artifacts:
     expose_as: 'Coverage Report'
+    when: always
     paths:
       - _build/meson-logs
       - _build/meson-logs/coveragereport/index.html
@@ -86,6 +88,7 @@ test_valgrind:
     - meson test -C _build --print-errorlogs --no-stdsplit --setup=valgrind
   artifacts:
     expose_as: 'Valgrind test logs'
+    when: always
     paths:
       - _build/meson-logs
       - _build/meson-logs/testlog-valgrind.txt
@@ -157,6 +160,7 @@ container_fedora_build:
       - $CI_PIPELINE_SOURCE == "schedule" && $CRON_TASK == "BUILD_CI_IMAGES"
   variables:
     GIT_STRATEGY: none # no need to pull the whole tree for rebuilding the image
+    FDO_FORCE_REBUILD: 1
     # a list of packages to install
     FDO_DISTRIBUTION_PACKAGES:
       $LIBFPRINT_DEPENDENCIES

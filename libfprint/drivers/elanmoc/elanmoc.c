@@ -331,7 +331,8 @@ elanmoc_reenroll_cb (FpiDeviceElanmoc *self,
       if ((self->curr_enrolled == (ELAN_MAX_ENROLL_NUM + 1)) && (buffer_in[1] == 0x00))
         {
           fp_warn ("elanmoc_reenroll_cb over enroll max");
-          fpi_ssm_mark_completed (self->task_ssm);
+          fpi_ssm_mark_failed (self->task_ssm,
+                               fpi_device_error_new (FP_DEVICE_ERROR_DATA_FULL));
           return;
         }
       if (buffer_in[1] == 0x00)
@@ -431,7 +432,7 @@ elan_enroll_run_state (FpiSsm *ssm, FpDevice *dev)
     case MOC_ENROLL_REENROLL_CHECK:
       data = fpi_ssm_get_data (ssm);
       cmd_buf = elanmoc_compose_cmd (&elanmoc_check_reenroll_cmd);
-      cmd_buf[4] = data[16];
+      memcpy (cmd_buf + 3, data, ELAN_USERDATE_SIZE);
       elanmoc_get_cmd (dev, cmd_buf, elanmoc_check_reenroll_cmd.cmd_len, elanmoc_check_reenroll_cmd.resp_len, 0, elanmoc_reenroll_cb);
       break;
 
@@ -688,7 +689,10 @@ identify_status_report (FpiDeviceElanmoc *self, int verify_status_id,
 
   if (error)
     {
-      fpi_device_enroll_complete (device, NULL, error);
+      if (fpi_device_get_current_action (device) == FPI_DEVICE_ACTION_VERIFY)
+        fpi_device_verify_complete (device, error);
+      else
+        fpi_device_identify_complete (device, error);
       return;
     }
 
@@ -802,7 +806,7 @@ elanmoc_enroll (FpDevice *device)
   FpPrint *print = NULL;
   GVariant *data = NULL;
   GVariant *uid = NULL;
-  g_autofree gchar *user_id;
+  g_autofree gchar *user_id = NULL;
   gsize user_id_len;
   guint8 *userdata = g_malloc0 (ELAN_USERDATE_SIZE);
 
@@ -1121,6 +1125,7 @@ fpi_device_elanmoc_class_init (FpiDeviceElanmocClass *klass)
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   dev_class->id_table = id_table;
   dev_class->nr_enroll_stages = ELAN_MOC_ENROLL_TIMES;
+  dev_class->temp_hot_seconds = -1;
 
   dev_class->open = elanmoc_open;
   dev_class->close = elanmoc_close;

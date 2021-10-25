@@ -22,6 +22,23 @@
 
 #include "fpi-device.h"
 
+/* Chosen so that if we turn on after WARM -> COLD, it takes exactly one time
+ * constant to go from COLD -> HOT.
+ *   TEMP_COLD_THRESH = 1 / (e + 1)
+ */
+#define TEMP_COLD_THRESH (0.26894142136999512075)
+#define TEMP_WARM_HOT_THRESH (1.0 - TEMP_COLD_THRESH)
+#define TEMP_HOT_WARM_THRESH (0.5)
+
+/* Delay updates by 100ms to avoid hitting the border exactly */
+#define TEMP_DELAY_SECONDS 0.1
+
+/* Hopefully 3min is long enough to not get in the way, while also not
+ * properly overheating any devices.
+ */
+#define DEFAULT_TEMP_HOT_SECONDS (3 * 60)
+#define DEFAULT_TEMP_COLD_SECONDS (9 * 60)
+
 typedef struct
 {
   FpDeviceType type;
@@ -36,6 +53,7 @@ typedef struct
 
   gboolean        is_removed;
   gboolean        is_open;
+  gboolean        is_suspended;
 
   gchar          *device_id;
   gchar          *device_name;
@@ -50,14 +68,37 @@ typedef struct
   /* We always make sure that only one task is run at a time. */
   FpiDeviceAction     current_action;
   GTask              *current_task;
+  GError             *current_cancellation_reason;
   GAsyncReadyCallback current_user_cb;
+  GCancellable       *current_cancellable;
   gulong              current_cancellable_id;
+  gulong              current_task_cancellable_id;
   GSource            *current_idle_cancel_source;
   GSource            *current_task_idle_return_source;
 
   /* State for tasks */
   gboolean            wait_for_finger;
   FpFingerStatusFlags finger_status;
+
+  /* Driver critical sections */
+  guint    critical_section;
+  GSource *critical_section_flush_source;
+  gboolean cancel_queued;
+  gboolean suspend_queued;
+  gboolean resume_queued;
+
+  /* Suspend/resume tasks */
+  GTask  *suspend_resume_task;
+  GError *suspend_error;
+
+  /* Device temperature model information and state */
+  GSource      *temp_timeout;
+  FpTemperature temp_current;
+  gint32        temp_hot_seconds;
+  gint32        temp_cold_seconds;
+  gint64        temp_last_update;
+  gboolean      temp_last_active;
+  gdouble       temp_current_ratio;
 } FpDevicePrivate;
 
 
@@ -88,3 +129,8 @@ typedef struct
 } FpMatchData;
 
 void match_data_free (FpMatchData *match_data);
+
+void fpi_device_configure_wakeup (FpDevice *device,
+                                  gboolean  enabled);
+void fpi_device_update_temp (FpDevice *device,
+                             gboolean  is_active);

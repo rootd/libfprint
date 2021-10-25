@@ -40,6 +40,9 @@ static const FpIdEntry id_table[] = {
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0100,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00F0,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0103,  },
+  { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0123,  },
+  { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0126,  },
+  { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0129,  },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
 
@@ -198,12 +201,17 @@ cmd_interrupt_cb (FpiUsbTransfer *transfer,
                   GError         *error)
 {
   g_debug ("interrupt transfer done");
+  fpi_device_critical_enter (device);
+
   if (error)
     {
       if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
         {
           g_error_free (error);
-          fpi_ssm_jump_to_state (transfer->ssm, SYNAPTICS_CMD_GET_RESP);
+          if (FPI_DEVICE_SYNAPTICS (device)->cmd_suspended)
+            fpi_ssm_jump_to_state (transfer->ssm, SYNAPTICS_CMD_SUSPENDED);
+          else
+            fpi_ssm_jump_to_state (transfer->ssm, SYNAPTICS_CMD_GET_RESP);
           return;
         }
 
@@ -264,6 +272,9 @@ synaptics_cmd_run_state (FpiSsm   *ssm,
       break;
 
     case SYNAPTICS_CMD_WAIT_INTERRUPT:
+      /* Interruptions are permitted only during an interrupt transfer */
+      fpi_device_critical_leave (dev);
+
       transfer = fpi_usb_transfer_new (dev);
       transfer->ssm = ssm;
       fpi_usb_transfer_fill_interrupt (transfer, USB_EP_INTERRUPT, USB_INTERRUPT_DATA_SIZE);
@@ -291,6 +302,17 @@ synaptics_cmd_run_state (FpiSsm   *ssm,
     case SYNAPTICS_CMD_RESTART:
       fpi_ssm_jump_to_state (ssm, SYNAPTICS_CMD_SEND_PENDING);
       break;
+
+    case SYNAPTICS_CMD_SUSPENDED:
+      /* The resume handler continues to the next state! */
+      fpi_device_critical_leave (dev);
+      fpi_device_suspend_complete (dev, NULL);
+      break;
+
+    case SYNAPTICS_CMD_RESUME:
+      fpi_device_critical_enter (dev);
+      fpi_ssm_jump_to_state (ssm, SYNAPTICS_CMD_WAIT_INTERRUPT);
+      break;
     }
 }
 
@@ -306,6 +328,7 @@ cmd_ssm_done (FpiSsm *ssm, FpDevice *dev, GError *error)
   if (error || self->cmd_complete_on_removal)
     callback (self, NULL, error);
 
+  fpi_device_critical_leave (dev);
   self->cmd_complete_on_removal = FALSE;
 }
 
@@ -415,6 +438,7 @@ synaptics_sensor_cmd (FpiDeviceSynaptics *self,
                                        SYNAPTICS_CMD_NUM_STATES);
           fpi_ssm_set_data (self->cmd_ssm, callback, NULL);
 
+          fpi_device_critical_enter (FP_DEVICE (self));
           fpi_ssm_start (self->cmd_ssm, cmd_ssm_done);
         }
     }
@@ -510,6 +534,12 @@ verify_msg_cb (FpiDeviceSynaptics *self,
   FpDevice *device = FP_DEVICE (self);
   bmkt_verify_resp_t *verify_resp;
 
+  if (self->action_starting)
+    {
+      fpi_device_critical_leave (device);
+      self->action_starting = FALSE;
+    }
+
   if (error)
     {
       fpi_device_verify_complete (device, error);
@@ -602,6 +632,8 @@ verify (FpDevice *device)
 
   G_DEBUG_HERE ();
 
+  self->action_starting = TRUE;
+  fpi_device_critical_enter (device);
   synaptics_sensor_cmd (self, 0, BMKT_CMD_VERIFY_USER, user_id, user_id_len, verify_msg_cb);
 }
 
@@ -628,6 +660,12 @@ identify_msg_cb (FpiDeviceSynaptics *self,
                  GError             *error)
 {
   FpDevice *device = FP_DEVICE (self);
+
+  if (self->action_starting)
+    {
+      fpi_device_critical_leave (device);
+      self->action_starting = FALSE;
+    }
 
   if (error)
     {
@@ -718,6 +756,7 @@ static void
 identify (FpDevice *device)
 {
   GPtrArray *prints = NULL;
+  FpiDeviceSynaptics *self = FPI_DEVICE_SYNAPTICS (device);
 
   fpi_device_get_identify_data (device, &prints);
 
@@ -731,6 +770,9 @@ identify (FpDevice *device)
       fpi_device_identify_complete (device, NULL);
       return;
     }
+
+  self->action_starting = TRUE;
+  fpi_device_critical_enter (device);
 
   init_identify_msg (device);
   compose_and_send_identify_msg (device);
@@ -833,6 +875,12 @@ enroll_msg_cb (FpiDeviceSynaptics *self,
 {
   FpDevice *device = FP_DEVICE (self);
   bmkt_enroll_resp_t *enroll_resp;
+
+  if (self->action_starting)
+    {
+      fpi_device_critical_leave (device);
+      self->action_starting = FALSE;
+    }
 
   if (error)
     {
@@ -980,6 +1028,9 @@ enroll (FpDevice *device)
   payload[1] = finger;
   memcpy (payload + 2, user_id, user_id_len);
 
+  self->action_starting = TRUE;
+  fpi_device_critical_enter (device);
+
   synaptics_sensor_cmd (self, 0, BMKT_CMD_ENROLL_USER, payload, user_id_len + 2, enroll_msg_cb);
 }
 
@@ -993,6 +1044,7 @@ delete_msg_cb (FpiDeviceSynaptics *self,
 
   if (error)
     {
+      fpi_device_critical_leave (device);
       fpi_device_delete_complete (device, error);
       return;
     }
@@ -1007,6 +1059,7 @@ delete_msg_cb (FpiDeviceSynaptics *self,
       break;
 
     case BMKT_RSP_DEL_USER_FP_FAIL:
+      fpi_device_critical_leave (device);
       if (resp->result == BMKT_FP_DATABASE_NO_RECORD_EXISTS ||
           resp->result == BMKT_FP_DATABASE_EMPTY)
         {
@@ -1023,6 +1076,7 @@ delete_msg_cb (FpiDeviceSynaptics *self,
 
     case BMKT_RSP_DEL_USER_FP_OK:
       fp_info ("Successfully deleted enrolled user");
+      fpi_device_critical_leave (device);
       fpi_device_delete_complete (device, NULL);
       break;
     }
@@ -1057,6 +1111,7 @@ delete_print (FpDevice *device)
   payload[0] = finger;
   memcpy (payload + 1, user_id, user_id_len);
 
+  fpi_device_critical_enter (device);
   synaptics_sensor_cmd (self, 0, BMKT_CMD_DEL_USER_FP, payload, user_id_len + 1, delete_msg_cb);
 }
 
@@ -1296,8 +1351,12 @@ fps_deinit_cb (FpiDeviceSynaptics *self,
                bmkt_response_t    *resp,
                GError             *error)
 {
+  g_autoptr(GError) err = NULL;
+
   /* Release usb interface */
-  g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (self)), 0, 0, &error);
+  g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (self)), 0, 0, &err);
+  if (!error)
+    error = g_steal_pointer (&err);
 
   g_clear_object (&self->interrupt_cancellable);
 
@@ -1369,6 +1428,59 @@ cancel (FpDevice *dev)
 }
 
 static void
+suspend (FpDevice *dev)
+{
+  FpiDeviceSynaptics *self = FPI_DEVICE_SYNAPTICS (dev);
+  FpiDeviceAction action = fpi_device_get_current_action (dev);
+
+  g_debug ("got suspend request");
+
+  if (action != FPI_DEVICE_ACTION_VERIFY && action != FPI_DEVICE_ACTION_IDENTIFY)
+    {
+      fpi_device_suspend_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_NOT_SUPPORTED));
+      return;
+    }
+
+  /* We are guaranteed to have a cmd_ssm running at this time. */
+  g_assert (self->cmd_ssm);
+  g_assert (fpi_ssm_get_cur_state (self->cmd_ssm) == SYNAPTICS_CMD_WAIT_INTERRUPT);
+  self->cmd_suspended = TRUE;
+
+  /* Cancel the current transfer.
+   * The CMD SSM will go into the suspend state and signal readyness. */
+  g_cancellable_cancel (self->interrupt_cancellable);
+  g_clear_object (&self->interrupt_cancellable);
+  self->interrupt_cancellable = g_cancellable_new ();
+}
+
+static void
+resume (FpDevice *dev)
+{
+  FpiDeviceSynaptics *self = FPI_DEVICE_SYNAPTICS (dev);
+  FpiDeviceAction action = fpi_device_get_current_action (dev);
+
+  g_debug ("got resume request");
+
+  if (action != FPI_DEVICE_ACTION_VERIFY && action != FPI_DEVICE_ACTION_IDENTIFY)
+    {
+      g_assert_not_reached ();
+      fpi_device_resume_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_NOT_SUPPORTED));
+      return;
+    }
+
+  /* We must have a suspended cmd_ssm at this point */
+  g_assert (self->cmd_ssm);
+  g_assert (self->cmd_suspended);
+  g_assert (fpi_ssm_get_cur_state (self->cmd_ssm) == SYNAPTICS_CMD_SUSPENDED);
+  self->cmd_suspended = FALSE;
+
+  /* Restart interrupt transfer. */
+  fpi_ssm_jump_to_state (self->cmd_ssm, SYNAPTICS_CMD_RESUME);
+
+  fpi_device_resume_complete (dev, NULL);
+}
+
+static void
 fpi_device_synaptics_init (FpiDeviceSynaptics *self)
 {
 }
@@ -1385,6 +1497,7 @@ fpi_device_synaptics_class_init (FpiDeviceSynapticsClass *klass)
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   dev_class->id_table = id_table;
   dev_class->nr_enroll_stages = ENROLL_SAMPLES;
+  dev_class->temp_hot_seconds = -1;
 
   dev_class->open = dev_init;
   dev_class->close = dev_exit;
@@ -1395,6 +1508,8 @@ fpi_device_synaptics_class_init (FpiDeviceSynapticsClass *klass)
   dev_class->delete = delete_print;
   dev_class->clear_storage = clear_storage;
   dev_class->cancel = cancel;
+  dev_class->suspend = suspend;
+  dev_class->resume = resume;
 
   fpi_device_class_auto_initialize_features (dev_class);
 }

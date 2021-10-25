@@ -34,7 +34,7 @@ G_DECLARE_FINAL_TYPE (FpiDeviceElanmoc, fpi_device_elanmoc, FPI, DEVICE_ELANMOC,
 #define ELAN_EP_MOC_CMD_IN (0x4 | LIBUSB_ENDPOINT_IN)
 #define ELAN_EP_IMG_IN (0x2 | LIBUSB_ENDPOINT_IN)
 
-#define ELAN_MOC_CMD_TIMEOUT 2000
+#define ELAN_MOC_CMD_TIMEOUT 5000
 #define ELAN_MOC_CAL_RETRY 500
 #define ELAN_MOC_ENROLL_TIMES 9
 #define ELAN_MAX_USER_ID_LEN 92
@@ -135,7 +135,7 @@ static const struct elanmoc_cmd elanmoc_set_mod_cmd = {
 
 static const struct elanmoc_cmd elanmoc_check_reenroll_cmd = {
   .cmd_header = {0x40, 0xff, 0x22},
-  .cmd_len = 5,
+  .cmd_len = 3 + ELAN_USERDATE_SIZE,
   .resp_len = 2,
 };
 

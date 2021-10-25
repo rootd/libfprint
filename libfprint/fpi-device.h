@@ -24,8 +24,6 @@
 #include "fp-image.h"
 #include "fpi-print.h"
 
-#include <config.h>
-
 /**
  * FpiDeviceUdevSubtype:
  * @FPI_DEVICE_UDEV_SUBTYPE_SPIDEV: The device requires an spidev node
@@ -82,6 +80,10 @@ struct _FpIdEntry
  *   fpi_device_set_nr_enroll_stages() from @probe if this is dynamic.
  * @scan_type: The scan type of supported devices; use
  *   fpi_device_set_scan_type() from @probe if this is dynamic.
+ * @temp_hot_seconds: Assumed time in seconds for the device to become too hot
+ *   after being mostly cold. Set to -1 if the device can be always-on.
+ * @temp_cold_seconds: Assumed time in seconds for the device to be mostly cold
+ *   after having been too hot to operate.
  * @usb_discover: Class method to check whether a USB device is supported by
  *  the driver. Should return 0 if the device is unsupported and a positive
  *  score otherwise. The default score is 50 and the driver with the highest
@@ -104,6 +106,10 @@ struct _FpIdEntry
  * @clear_storage: Delete all prints from the device
  * @cancel: Called on cancellation, this is a convenience to not need to handle
  *   the #GCancellable directly by using fpi_device_get_cancellable().
+ * @suspend: Called when an interactive action is running (ENROLL, VERIFY,
+ *    IDENTIFY or CAPTURE) and the system is about to go into suspend.
+ * @resume: Called to resume an ongoing interactive action after the system has
+ *    resumed from suspend.
  *
  * NOTE: If your driver is image based, then you should subclass #FpImageDevice
  * instead. #FpImageDevice based drivers use a different way of interacting
@@ -121,6 +127,9 @@ struct _FpIdEntry
  * Drivers must also handle cancellation properly for any long running
  * operation (i.e. any operation that requires capturing). It is entirely fine
  * to ignore cancellation requests for short operations (e.g. open/close).
+ *
+ * Note that @cancel, @suspend and @resume will not be called while the device
+ * is within a fpi_device_critical_enter()/fpi_device_critical_leave() block.
  *
  * This API is solely intended for drivers. It is purely internal and neither
  * API nor ABI stable.
@@ -142,6 +151,10 @@ struct _FpDeviceClass
   gint       nr_enroll_stages;
   FpScanType scan_type;
 
+  /* Simple device temperature model constants */
+  gint32 temp_hot_seconds;
+  gint32 temp_cold_seconds;
+
   /* Callbacks */
   gint (*usb_discover) (GUsbDevice *usb_device);
   void (*probe)    (FpDevice *device);
@@ -156,6 +169,8 @@ struct _FpDeviceClass
   void (*clear_storage)  (FpDevice * device);
 
   void (*cancel)   (FpDevice *device);
+  void (*suspend)  (FpDevice *device);
+  void (*resume)   (FpDevice *device);
 };
 
 void fpi_device_class_auto_initialize_features (FpDeviceClass *device_class);
@@ -256,6 +271,9 @@ void fpi_device_update_features (FpDevice       *device,
 void fpi_device_action_error (FpDevice *device,
                               GError   *error);
 
+void fpi_device_critical_enter (FpDevice *device);
+void fpi_device_critical_leave (FpDevice *device);
+
 void fpi_device_probe_complete (FpDevice    *device,
                                 const gchar *device_id,
                                 const gchar *device_name,
@@ -281,6 +299,10 @@ void fpi_device_list_complete (FpDevice  *device,
                                GError    *error);
 void fpi_device_clear_storage_complete (FpDevice *device,
                                         GError   *error);
+void fpi_device_suspend_complete (FpDevice *device,
+                                  GError   *error);
+void fpi_device_resume_complete (FpDevice *device,
+                                 GError   *error);
 
 void fpi_device_enroll_progress (FpDevice *device,
                                  gint      completed_stages,
