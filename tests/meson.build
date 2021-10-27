@@ -22,12 +22,16 @@ envs.set('FP_DRIVERS_WHITELIST', ':'.join([
 envs.set('NO_AT_BRIDGE', '1')
 
 drivers_tests = [
+    'aes2501',
     'aes3500',
     'elan',
+    'elan-cobo',
     'elanmoc',
     'elanspi',
     'synaptics',
     'upektc_img',
+    'uru4000-msv2',
+    'uru4000-4500',
     'vfs0050',
     'vfs301',
     'vfs5011',
@@ -36,6 +40,15 @@ drivers_tests = [
     'nb1010',
     'egis0570',
 ]
+
+if get_option('introspection')
+  conf = configuration_data()
+  conf.set('SRCDIR', meson.source_root())
+  conf.set('BUILDDIR', meson.build_root())
+  configure_file(configuration: conf,
+      input: 'create-driver-test.py.in',
+      output: 'create-driver-test.py')
+endif
 
 if get_option('introspection')
     envs.prepend('GI_TYPELIB_PATH', join_paths(meson.build_root(), 'libfprint'))
@@ -86,11 +99,7 @@ if get_option('introspection')
     endforeach
 
     foreach driver_test: drivers_tests
-        if driver_test.contains('-')
-          driver_name = driver_test.split('-')[0]
-        else
-          driver_name = driver_test
-        endif
+        driver_name = driver_test.split('-')[0]
         driver_envs = envs
         driver_envs.set('FP_DRIVERS_WHITELIST', driver_name)
 
