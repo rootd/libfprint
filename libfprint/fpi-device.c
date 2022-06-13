@@ -21,6 +21,7 @@
 #define FP_COMPONENT "device"
 #include <math.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include "fpi-log.h"
 
@@ -866,16 +867,16 @@ fpi_device_critical_section_flush_idle_cb (FpDevice *device)
 
   if (priv->suspend_queued)
     {
-      cls->suspend (device);
       priv->suspend_queued = FALSE;
+      fpi_device_suspend (device);
 
       return G_SOURCE_CONTINUE;
     }
 
   if (priv->resume_queued)
     {
-      cls->resume (device);
       priv->resume_queued = FALSE;
+      fpi_device_resume (device);
 
       return G_SOURCE_CONTINUE;
     }
@@ -912,6 +913,7 @@ fpi_device_critical_leave (FpDevice *device)
     return;
 
   priv->critical_section_flush_source = g_idle_source_new ();
+  g_source_set_priority (priv->critical_section_flush_source, G_PRIORITY_HIGH);
   g_source_set_callback (priv->critical_section_flush_source,
                          (GSourceFunc) fpi_device_critical_section_flush_idle_cb,
                          device,
@@ -1550,6 +1552,148 @@ fpi_device_list_complete (FpDevice  *device,
     fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR, error);
 }
 
+static int
+update_attr (const char *attr, const char *value)
+{
+  int fd, err;
+  gssize r;
+  char buf[50] = { 0 };
+
+  fd = open (attr, O_RDONLY);
+  err = -errno;
+  if (fd < 0)
+    return -err;
+
+  r = read (fd, buf, sizeof (buf) - 1);
+  err = errno;
+  close (fd);
+  if (r < 0)
+    return -err;
+
+  g_strchomp (buf);
+  if (g_strcmp0 (buf, value) == 0)
+    return 0;
+
+  /* O_TRUNC makes things work in the umockdev environment */
+  fd = open (attr, O_WRONLY | O_TRUNC);
+  err = errno;
+  if (fd < 0)
+    return -err;
+
+  r = write (fd, value, strlen (value));
+  err = -errno;
+  close (fd);
+  if (r < 0)
+    {
+      /* Write failures are weird, and are worth a warning */
+      g_warning ("Could not write %s to %s", value, attr);
+      return -err;
+    }
+
+  return 0;
+}
+
+static void
+complete_suspend_resume_task (FpDevice *device)
+{
+  FpDevicePrivate *priv = fp_device_get_instance_private (device);
+
+  g_assert (priv->suspend_resume_task);
+
+  g_task_return_boolean (g_steal_pointer (&priv->suspend_resume_task), TRUE);
+}
+
+void
+fpi_device_suspend (FpDevice *device)
+{
+  FpDevicePrivate *priv = fp_device_get_instance_private (device);
+
+  /* If the device is currently idle, just complete immediately.
+   * For long running tasks, call the driver handler right away, for short
+   * tasks, wait for completion and then return the task.
+   */
+  switch (priv->current_action)
+    {
+    case FPI_DEVICE_ACTION_NONE:
+      fpi_device_suspend_complete (device, NULL);
+      break;
+
+    case FPI_DEVICE_ACTION_ENROLL:
+    case FPI_DEVICE_ACTION_VERIFY:
+    case FPI_DEVICE_ACTION_IDENTIFY:
+    case FPI_DEVICE_ACTION_CAPTURE:
+      if (FP_DEVICE_GET_CLASS (device)->suspend)
+        {
+          if (priv->critical_section)
+            priv->suspend_queued = TRUE;
+          else
+            FP_DEVICE_GET_CLASS (device)->suspend (device);
+        }
+      else
+        {
+          fpi_device_suspend_complete (device, fpi_device_error_new (FP_DEVICE_ERROR_NOT_SUPPORTED));
+        }
+      break;
+
+    default:
+    case FPI_DEVICE_ACTION_PROBE:
+    case FPI_DEVICE_ACTION_OPEN:
+    case FPI_DEVICE_ACTION_CLOSE:
+    case FPI_DEVICE_ACTION_DELETE:
+    case FPI_DEVICE_ACTION_LIST:
+    case FPI_DEVICE_ACTION_CLEAR_STORAGE:
+      g_signal_connect_object (priv->current_task,
+                               "notify::completed",
+                               G_CALLBACK (complete_suspend_resume_task),
+                               device,
+                               G_CONNECT_SWAPPED);
+
+      break;
+    }
+}
+
+void
+fpi_device_resume (FpDevice *device)
+{
+  FpDevicePrivate *priv = fp_device_get_instance_private (device);
+
+  switch (priv->current_action)
+    {
+    case FPI_DEVICE_ACTION_NONE:
+      fpi_device_resume_complete (device, NULL);
+      break;
+
+    case FPI_DEVICE_ACTION_ENROLL:
+    case FPI_DEVICE_ACTION_VERIFY:
+    case FPI_DEVICE_ACTION_IDENTIFY:
+    case FPI_DEVICE_ACTION_CAPTURE:
+      if (FP_DEVICE_GET_CLASS (device)->resume)
+        {
+          if (priv->critical_section)
+            priv->resume_queued = TRUE;
+          else
+            FP_DEVICE_GET_CLASS (device)->resume (device);
+        }
+      else
+        {
+          fpi_device_resume_complete (device, fpi_device_error_new (FP_DEVICE_ERROR_NOT_SUPPORTED));
+        }
+      break;
+
+    default:
+    case FPI_DEVICE_ACTION_PROBE:
+    case FPI_DEVICE_ACTION_OPEN:
+    case FPI_DEVICE_ACTION_CLOSE:
+    case FPI_DEVICE_ACTION_DELETE:
+    case FPI_DEVICE_ACTION_LIST:
+    case FPI_DEVICE_ACTION_CLEAR_STORAGE:
+      /* cannot happen as we make sure these tasks complete before suspend */
+      g_assert_not_reached ();
+      complete_suspend_resume_task (device);
+      break;
+    }
+}
+
 void
 fpi_device_configure_wakeup (FpDevice *device, gboolean enabled)
 {
@@ -1565,8 +1709,7 @@ fpi_device_configure_wakeup (FpDevice *device, gboolean enabled)
         guint8 bus, port;
         g_autofree gchar *sysfs_wakeup = NULL;
         g_autofree gchar *sysfs_persist = NULL;
-        gssize r;
-        int fd;
+        int res;
 
         ports = g_string_new (NULL);
         bus = g_usb_device_get_bus (priv->usb_device);
@@ -1582,20 +1725,9 @@ fpi_device_configure_wakeup (FpDevice *device, gboolean enabled)
         g_string_set_size (ports, ports->len - 1);
 
         sysfs_wakeup = g_strdup_printf ("/sys/bus/usb/devices/%d-%s/power/wakeup", bus, ports->str);
-        fd = open (sysfs_wakeup, O_WRONLY);
-
-        if (fd < 0)
-          {
-            /* Wakeup not existing appears to be relatively normal. */
-            g_debug ("Failed to open %s", sysfs_wakeup);
-          }
-        else
-          {
-            r = write (fd, wakeup_command, strlen (wakeup_command));
-            if (r < 0)
-              g_warning ("Could not configure wakeup to %s by writing %s", wakeup_command, sysfs_wakeup);
-            close (fd);
-          }
+        res = update_attr (sysfs_wakeup, wakeup_command);
+        if (res < 0)
+          g_debug ("Failed to set %s to %s", sysfs_wakeup, wakeup_command);
 
         /* Persist means that the kernel tries to keep the USB device open
          * in case it is "replugged" due to suspend.
@@ -1603,20 +1735,9 @@ fpi_device_configure_wakeup (FpDevice *device, gboolean enabled)
          * state. Instead, seeing an unplug and a new device makes more sense.
          */
         sysfs_persist = g_strdup_printf ("/sys/bus/usb/devices/%d-%s/power/persist", bus, ports->str);
-        fd = open (sysfs_persist, O_WRONLY);
-
-        if (fd < 0)
-          {
-            g_warning ("Failed to open %s", sysfs_persist);
-            return;
-          }
-        else
-          {
-            r = write (fd, "0", 1);
-            if (r < 0)
-              g_message ("Could not disable USB persist by writing to %s", sysfs_persist);
-            close (fd);
-          }
+        res = update_attr (sysfs_persist, "0");
+        if (res < 0)
+          g_warning ("Failed to disable USB persist by writing to %s", sysfs_persist);
 
         break;
       }
