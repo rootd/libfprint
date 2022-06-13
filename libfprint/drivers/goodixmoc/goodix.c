@@ -159,7 +159,7 @@ fp_cmd_receive_cb (FpiUsbTransfer *transfer,
     {
       fpi_ssm_mark_failed (transfer->ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
-                                                     "Corrupted message received"));
+                                                     "Corrupted message header received"));
       return;
     }
 
@@ -420,12 +420,9 @@ fp_verify_cb (FpiDeviceGoodixMoc  *self,
               gxfp_cmd_response_t *resp,
               GError              *error)
 {
-  g_autoptr(GPtrArray) templates = NULL;
   FpDevice *device = FP_DEVICE (self);
-  FpPrint *match = NULL;
-  FpPrint *print = NULL;
-  gint cnt = 0;
-  gboolean find = false;
+  FpPrint *new_scan = NULL;
+  FpPrint *matching = NULL;
 
   if (error)
     {
@@ -434,46 +431,34 @@ fp_verify_cb (FpiDeviceGoodixMoc  *self,
     }
   if (resp->verify.match)
     {
-      match = fp_print_from_template (self, &resp->verify.template);
+      new_scan = fp_print_from_template (self, &resp->verify.template);
 
       if (fpi_device_get_current_action (device) == FPI_DEVICE_ACTION_VERIFY)
         {
-          templates = g_ptr_array_sized_new (1);
-          fpi_device_get_verify_data (device, &print);
-          g_ptr_array_add (templates, print);
+          fpi_device_get_verify_data (device, &matching);
+          if (!fp_print_equal (matching, new_scan))
+            matching = NULL;
         }
       else
         {
+          GPtrArray *templates = NULL;
           fpi_device_get_identify_data (device, &templates);
-          g_ptr_array_ref (templates);
-        }
-      for (cnt = 0; cnt < templates->len; cnt++)
-        {
-          print = g_ptr_array_index (templates, cnt);
 
-          if (fp_print_equal (print, match))
+          for (gint i = 0; i < templates->len; i++)
             {
-              find = true;
-              break;
+              if (fp_print_equal (g_ptr_array_index (templates, i), new_scan))
+                {
+                  matching = g_ptr_array_index (templates, i);
+                  break;
+                }
             }
-
-        }
-      if (find)
-        {
-          if (fpi_device_get_current_action (device) == FPI_DEVICE_ACTION_VERIFY)
-            fpi_device_verify_report (device, FPI_MATCH_SUCCESS, match, error);
-          else
-            fpi_device_identify_report (device, print, match, error);
         }
     }
 
-  if (!find)
-    {
-      if (fpi_device_get_current_action (device) == FPI_DEVICE_ACTION_VERIFY)
-        fpi_device_verify_report (device, FPI_MATCH_FAIL, NULL, error);
-      else
-        fpi_device_identify_report (device, NULL, NULL, error);
-    }
+  if (fpi_device_get_current_action (device) == FPI_DEVICE_ACTION_VERIFY)
+    fpi_device_verify_report (device, matching ? FPI_MATCH_SUCCESS : FPI_MATCH_FAIL, new_scan, error);
+  else
+    fpi_device_identify_report (device, matching, new_scan, error);
 
   fpi_ssm_next_state (self->task_ssm);
 
@@ -764,9 +749,14 @@ fp_enroll_check_duplicate_cb (FpiDeviceGoodixMoc  *self,
     }
   if (resp->check_duplicate_resp.duplicate)
     {
+      g_autoptr(FpPrint) print = NULL;
+
+      print = g_object_ref_sink (fp_print_from_template (self, &resp->check_duplicate_resp.template));
+
       fpi_ssm_mark_failed (self->task_ssm,
                            fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_DUPLICATE,
-                                                     "Finger has already enrolled"));
+                                                     "Finger was already enrolled as '%s'",
+                                                     fp_print_get_description (print)));
       return;
     }
 
@@ -1170,6 +1160,32 @@ fp_template_delete_cb (FpiDeviceGoodixMoc  *self,
   fp_info ("Successfully deleted enrolled user");
   fpi_device_delete_complete (device, NULL);
 }
+
+static void
+fp_template_delete_all_cb (FpiDeviceGoodixMoc  *self,
+                           gxfp_cmd_response_t *resp,
+                           GError              *error)
+{
+  FpDevice *device = FP_DEVICE (self);
+
+  if (error)
+    {
+      fpi_device_clear_storage_complete (device, error);
+      return;
+    }
+  if ((resp->result >= GX_FAILED) && (resp->result != GX_ERROR_FINGER_ID_NOEXIST))
+    {
+      fpi_device_clear_storage_complete (FP_DEVICE (self),
+                                         fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                                   "Failed clear storage, result: 0x%x",
+                                                                   resp->result));
+      return;
+    }
+
+  fp_info ("Successfully cleared storage");
+  fpi_device_clear_storage_complete (device, NULL);
+}
+
 /******************************************************************************
  *
  *  fp_template_list Function
@@ -1282,6 +1298,7 @@ gx_fp_probe (FpDevice *device)
     case 0x639C:
     case 0x63AC:
     case 0x63BC:
+    case 0x63CC:
     case 0x6A94:
       self->max_enroll_stage = 12;
       break;
@@ -1493,6 +1510,19 @@ gx_fp_template_delete (FpDevice *device)
 }
 
 static void
+gx_fp_template_delete_all (FpDevice *device)
+{
+  FpiDeviceGoodixMoc *self = FPI_DEVICE_GOODIXMOC (device);
+
+  goodix_sensor_cmd (self, MOC_CMD0_DELETETEMPLATE, MOC_CMD1_DELETE_ALL,
+                     false,
+                     NULL,
+                     0,
+                     fp_template_delete_all_cb);
+
+}
+
+static void
 fpi_device_goodixmoc_init (FpiDeviceGoodixMoc *self)
 {
 
@@ -1505,6 +1535,7 @@ static const FpIdEntry id_table[] = {
   { .vid = 0x27c6,  .pid = 0x639C,  },
   { .vid = 0x27c6,  .pid = 0x63AC,  },
   { .vid = 0x27c6,  .pid = 0x63BC,  },
+  { .vid = 0x27c6,  .pid = 0x63CC,  },
   { .vid = 0x27c6,  .pid = 0x6496,  },
   { .vid = 0x27c6,  .pid = 0x6584,  },
   { .vid = 0x27c6,  .pid = 0x658C,  },
@@ -1534,6 +1565,7 @@ fpi_device_goodixmoc_class_init (FpiDeviceGoodixMocClass *klass)
   dev_class->probe  = gx_fp_probe;
   dev_class->enroll = gx_fp_enroll;
   dev_class->delete = gx_fp_template_delete;
+  dev_class->clear_storage = gx_fp_template_delete_all;
   dev_class->list   = gx_fp_template_list;
   dev_class->verify   = gx_fp_verify_identify;
   dev_class->identify = gx_fp_verify_identify;

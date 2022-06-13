@@ -439,6 +439,12 @@ elanspi_capture_old_line_handler (FpiSpiTransfer *transfer, FpDevice *dev, gpoin
     }
   else
     {
+      /* check for termination */
+      if (fpi_device_get_current_action (dev) == FPI_DEVICE_ACTION_NONE)
+        {
+          fpi_ssm_mark_completed (transfer->ssm);
+          return;
+        }
       /* check for cancellation */
       if (fpi_device_action_is_cancelled (dev))
         {
@@ -606,6 +612,7 @@ elanspi_calibrate_old_handler (FpiSsm *ssm, FpDevice *dev)
     case ELANSPI_CALIBOLD_CHECKFIN_CAPTURE:
     case ELANSPI_CALIBOLD_DACFINE_CAPTURE:
       chld = fpi_ssm_new (dev, elanspi_capture_old_handler, ELANSPI_CAPTOLD_NSTATES);
+      fpi_ssm_silence_debug (chld);
       fpi_ssm_start_subsm (ssm, chld);
       return;
 
@@ -860,6 +867,7 @@ elanspi_calibrate_hv_handler (FpiSsm *ssm, FpDevice *dev)
 
     case ELANSPI_CALIBHV_CAPTURE:
       chld = fpi_ssm_new (dev, elanspi_capture_hv_handler, ELANSPI_CAPTHV_NSTATES);
+      fpi_ssm_silence_debug (chld);
       fpi_ssm_start_subsm (ssm, chld);
       return;
 
@@ -1115,6 +1123,7 @@ do_sw_reset:
         chld = fpi_ssm_new_full (dev, elanspi_calibrate_hv_handler, ELANSPI_CALIBHV_NSTATES, ELANSPI_CALIBHV_PROTECT, "HV calibrate");
       else
         chld = fpi_ssm_new_full (dev, elanspi_calibrate_old_handler, ELANSPI_CALIBOLD_NSTATES, ELANSPI_CALIBOLD_PROTECT, "old calibrate");
+      fpi_ssm_silence_debug (chld);
       fpi_ssm_start_subsm (ssm, chld);
       return;
 
@@ -1123,6 +1132,7 @@ do_sw_reset:
         chld = fpi_ssm_new (dev, elanspi_capture_hv_handler, ELANSPI_CAPTHV_NSTATES);
       else
         chld = fpi_ssm_new (dev, elanspi_capture_old_handler, ELANSPI_CAPTOLD_NSTATES);
+      fpi_ssm_silence_debug (chld);
       fpi_ssm_start_subsm (ssm, chld);
       return;
 
@@ -1219,8 +1229,6 @@ elanspi_guess_image (FpiDeviceElanSpi *self, guint16 *raw_image)
 
   sq_stddev /= (frame_width * frame_height);
 
-  fp_dbg ("<guess> stddev=%" G_GUINT64_FORMAT "d, ip=%d, is_fp=%d, is_empty=%d", sq_stddev, invalid_percent, is_fp, is_empty);
-
   if (invalid_percent < ELANSPI_MAX_REAL_INVALID_PERCENT)
     is_fp += 1;
   if (invalid_percent > ELANSPI_MIN_EMPTY_INVALID_PERCENT)
@@ -1230,6 +1238,8 @@ elanspi_guess_image (FpiDeviceElanSpi *self, guint16 *raw_image)
     is_fp += 1;
   if (sq_stddev < ELANSPI_MAX_EMPTY_STDDEV)
     is_empty += 1;
+
+  fp_dbg ("<guess> stddev=%" G_GUINT64_FORMAT "d, ip=%d, is_fp=%d, is_empty=%d", sq_stddev, invalid_percent, is_fp, is_empty);
 
   if (is_fp > is_empty)
     return ELANSPI_GUESS_FINGERPRINT;
@@ -1482,11 +1492,12 @@ elanspi_fp_capture_ssm_handler (FpiSsm *ssm, FpDevice *dev)
       if (self->deactivating)
         {
           fp_dbg ("<capture> got deactivate; exiting");
+
+          self->deactivating = FALSE;
           fpi_ssm_mark_completed (ssm);
 
           /* mark deactivate done */
           fpi_image_device_deactivate_complete (FP_IMAGE_DEVICE (dev), NULL);
-          self->deactivating = FALSE;
 
           return;
         }
@@ -1495,6 +1506,7 @@ elanspi_fp_capture_ssm_handler (FpiSsm *ssm, FpDevice *dev)
         chld = fpi_ssm_new (dev, elanspi_capture_hv_handler, ELANSPI_CAPTHV_NSTATES);
       else
         chld = fpi_ssm_new (dev, elanspi_capture_old_handler, ELANSPI_CAPTOLD_NSTATES);
+      fpi_ssm_silence_debug (chld);
       fpi_ssm_start_subsm (ssm, chld);
       return;
 

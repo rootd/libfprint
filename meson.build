@@ -1,5 +1,5 @@
 project('libfprint', [ 'c', 'cpp' ],
-    version: '1.94.1',
+    version: '1.94.4',
     license: 'LGPLv2.1+',
     default_options: [
         'buildtype=debugoptimized',
@@ -11,6 +11,7 @@ project('libfprint', [ 'c', 'cpp' ],
 gnome = import('gnome')
 
 libfprint_conf = configuration_data()
+libfprint_conf.set_quoted('LIBFPRINT_VERSION', meson.project_version())
 
 cc = meson.get_compiler('c')
 cpp = meson.get_compiler('cpp')

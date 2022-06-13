@@ -36,13 +36,14 @@ static const FpIdEntry id_table[] = {
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00F9,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00FC,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00C2,  },
-  { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00C9,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0100,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00F0,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0103,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0123,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0126,  },
   { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0129,  },
+  { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x0168,  },
+  { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x015F,  },
   { .vid = 0,  .pid = 0,  .driver_data = 0 },   /* terminating entry */
 };
 
@@ -225,6 +226,7 @@ cmd_interrupt_cb (FpiUsbTransfer *transfer,
     }
   else
     {
+      fpi_device_critical_leave (device);
       fpi_usb_transfer_submit (fpi_usb_transfer_ref (transfer),
                                0,
                                NULL,
