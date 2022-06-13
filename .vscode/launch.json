@@ -1,25 +1,33 @@
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "type": "cppdbg",
-      "name": "Launch examples/img-capture",
-      "request": "launch",
-      "program": "${workspaceFolder}/_build/examples/img-capture",
-      "args": [],
-      "stopAtEntry": false,
-      "cwd": "${fileDirname}",
-      "environment": [],
-      "MIMode": "gdb",
-      "avoidWindowsConsoleRedirection": true,
-      "preLaunchTask": "${defaultBuildTask}",
-      "setupCommands": [
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
         {
-          "description": "Enable pretty-printing for gdb",
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
+            "name": "Launch Image Capture",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/_build/examples/img-capture",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "${defaultBuildTask}"
         }
-      ]
-    }
-  ]
+    ]
 }
