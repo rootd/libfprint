@@ -3,6 +3,15 @@
   "tasks": [
     {
       "type": "shell",
+      "label": "Configure the project",
+      "command": "/usr/bin/meson",
+      "args": [
+        "${workspaceFolder}/_build"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "type": "shell",
       "label": "Build the project",
       "command": "/usr/bin/meson",
       "args": [
