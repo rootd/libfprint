@@ -33,18 +33,19 @@ static const guint8 goodix_511_psk_0[] = {
 
 struct _GoodixTlsServer;
 
-typedef void (*GoodixTlsServerSendCallback)(struct _GoodixTlsServer* self,
-                                            guint8* data, guint16 length);
+typedef void (*GoodixTlsServerSendCallback)(struct _GoodixTlsServer *self,
+                                            guint8 *data, guint16 length);
 
-typedef void (*GoodixTlsServerConnectionCallback)(struct _GoodixTlsServer* self,
-                                                  GError* error,
+typedef void (*GoodixTlsServerConnectionCallback)(struct _GoodixTlsServer *self,
+                                                  GError *error,
                                                   gpointer user_data);
 
-typedef void (*GoodixTlsServerDecodedCallback)(struct _GoodixTlsServer* self,
-                                               guint8* data, gsize length,
-                                               GError* error);
+typedef void (*GoodixTlsServerDecodedCallback)(struct _GoodixTlsServer *self,
+                                               guint8 *data, gsize length,
+                                               GError *error);
 
-typedef struct _GoodixTlsServer {
+typedef struct _GoodixTlsServer
+{
     // This callback should be called when a TLS packet must be send to the
     // device
     // GoodixTlsServerSendCallback send_callback;
@@ -62,9 +63,9 @@ typedef struct _GoodixTlsServer {
 
     // Put what you need here.
     gpointer user_data; // Passed to all callbacks
-    SSL_CTX* ssl_ctx;
+    SSL_CTX *ssl_ctx;
     int sock_fd;
-    SSL* ssl_layer;
+    SSL *ssl_layer;
     // SSL* cli_ssl_layer;
     int client_fd;
     pthread_t serve_thread;
@@ -72,19 +73,19 @@ typedef struct _GoodixTlsServer {
 
 // This is called only once to init the TLS server.
 // Return TRUE on success, FALSE otherwise and error should be set.
-gboolean goodix_tls_server_init(GoodixTlsServer* self, GError** error);
+gboolean goodix_tls_server_init(GoodixTlsServer *self, GError **error);
 
-gboolean goodix_tls_init_cli(GoodixTlsServer* self, GError** err);
+gboolean goodix_tls_init_cli(GoodixTlsServer *self, GError **err);
 
 // This can be called multiple times. It is called when the device send a TLS
 // packet.
-int goodix_tls_server_receive(GoodixTlsServer* self, guint8* data,
-                              guint32 length, GError** error);
+int goodix_tls_server_receive(GoodixTlsServer *self, guint8 *data,
+                              guint32 length, GError **error);
 
-int goodix_tls_client_send(GoodixTlsServer* self, guint8* data, guint16 length);
+int goodix_tls_client_send(GoodixTlsServer *self, guint8 *data, guint16 length);
 
-int goodix_tls_client_recv(GoodixTlsServer* self, guint8* data, guint16 length);
+int goodix_tls_client_recv(GoodixTlsServer *self, guint8 *data, guint16 length);
 
 // This is called only once to deinit the TLS server.
 // Return TRUE on success, FALSE otherwise and error should be set.
-gboolean goodix_tls_server_deinit(GoodixTlsServer* self, GError** error);
+gboolean goodix_tls_server_deinit(GoodixTlsServer *self, GError **error);

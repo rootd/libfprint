@@ -27,7 +27,8 @@ G_DECLARE_DERIVABLE_TYPE(FpiDeviceGoodixTls, fpi_device_goodixtls, FPI,
 
 #define FPI_TYPE_DEVICE_GOODIXTLS (fpi_device_goodixtls_get_type())
 
-struct _FpiDeviceGoodixTlsClass {
+struct _FpiDeviceGoodixTlsClass
+{
   FpImageDeviceClass parent;
 
   gint interface;
@@ -35,7 +36,8 @@ struct _FpiDeviceGoodixTlsClass {
   guint8 ep_out;
 };
 
-typedef struct __attribute__((__packed__)) _GoodixCallbackInfo {
+typedef struct __attribute__((__packed__)) _GoodixCallbackInfo
+{
   GCallback callback;
   gpointer user_data;
 } GoodixCallbackInfo;
@@ -67,8 +69,8 @@ typedef void (*GoodixDefaultCallback)(FpDevice *dev, guint8 *data,
                                       GError *error);
 typedef GoodixDefaultCallback GoodixTlsCallback;
 
-typedef void (*GoodixImageCallback)(FpDevice* dev, guint8* data, guint16 length,
-                                    gpointer user_data, GError* error);
+typedef void (*GoodixImageCallback)(FpDevice *dev, guint8 *data, guint16 length,
+                                    gpointer user_data, GError *error);
 
 gchar *data_to_str(guint8 *data, guint32 length);
 
@@ -114,7 +116,7 @@ void goodix_receive_timeout_cb(FpDevice *dev, gpointer user_data);
 
 void goodix_receive_data(FpDevice *dev);
 
-void goodix_start_read_loop(FpDevice* dev);
+void goodix_start_read_loop(FpDevice *dev);
 // ---- GOODIX RECEIVE SECTION END ----
 
 // -----------------------------------------------------------------------------
@@ -197,7 +199,7 @@ void goodix_send_firmware_version(FpDevice *dev,
 void goodix_send_query_mcu_state(FpDevice *dev, GoodixDefaultCallback callback,
                                  gpointer user_data);
 
-void goodix_send_request_tls_connection(FpDevice* dev,
+void goodix_send_request_tls_connection(FpDevice *dev,
                                         GoodixDefaultCallback callback,
                                         gpointer user_data);
 
@@ -214,7 +216,7 @@ void goodix_send_preset_psk_read(FpDevice *dev, guint32 flags, guint16 length,
                                  GoodixPresetPskReadCallback callback,
                                  gpointer user_data);
 
-void goodix_send_read_otp(FpDevice* dev, GoodixDefaultCallback callback,
+void goodix_send_read_otp(FpDevice *dev, GoodixDefaultCallback callback,
                           gpointer user_data);
 
 // ---- GOODIX SEND SECTION END ----
@@ -227,7 +229,7 @@ gboolean goodix_dev_init(FpDevice *dev, GError **error);
 
 gboolean goodix_dev_deinit(FpDevice *dev, GError **error);
 
-void goodix_reset_state(FpDevice* dev);
+void goodix_reset_state(FpDevice *dev);
 
 // ---- DEV SECTION END ----
 
@@ -235,20 +237,20 @@ void goodix_reset_state(FpDevice* dev);
 
 // ---- TLS SECTION START ----
 
-void goodix_read_tls(FpDevice* dev, GoodixTlsCallback callback,
+void goodix_read_tls(FpDevice *dev, GoodixTlsCallback callback,
                      gpointer user_data);
 
-void goodix_tls_run_state(FpiSsm* ssm, FpDevice* dev);
+void goodix_tls_run_state(FpiSsm *ssm, FpDevice *dev);
 
 void goodix_tls_complete(FpiSsm *ssm, FpDevice *dev, GError *error);
 
-void goodix_tls(FpDevice* dev, GoodixNoneCallback callback, gpointer user_data);
+void goodix_tls(FpDevice *dev, GoodixNoneCallback callback, gpointer user_data);
 
-gboolean goodix_shutdown_tls(FpDevice* dev, GError** error);
+gboolean goodix_shutdown_tls(FpDevice *dev, GError **error);
 
-void goodix_tls_read_image(FpDevice* dev, GoodixImageCallback callback,
+void goodix_tls_read_image(FpDevice *dev, GoodixImageCallback callback,
                            gpointer user_data);
 
-void goodix_tls_decrypt_image(FpDevice* dev, guint8** data, guint16* len);
+void goodix_tls_decrypt_image(FpDevice *dev, guint8 **data, guint16 *len);
 
 // ---- TLS SECTION END ----
