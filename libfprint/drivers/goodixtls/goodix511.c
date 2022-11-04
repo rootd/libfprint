@@ -597,10 +597,9 @@ typedef struct _frame_processing_info
 
 static void process_frame(Goodix511Pix *raw_frame, frame_processing_info *info)
 {
-    struct fpi_frame *frame =
-        g_malloc(GOODIX511_FRAME_SIZE + sizeof(struct fpi_frame));
+    unsigned char* frame = g_malloc(GOODIX511_FRAME_SIZE);
     postprocess_frame(raw_frame, info->dev->empty_img);
-    squash_frame_linear(raw_frame, frame->data);
+    squash_frame_linear(raw_frame, frame);
 
     *(info->frames) = g_slist_append(*(info->frames), frame);
 }
@@ -649,11 +648,14 @@ static void scan_on_read_img(FpDevice *dev, guint8 *data, guint16 len,
         GSList *frames = NULL;
         frame_processing_info pinfo = {.dev = self, .frames = &frames};
 
-        g_slist_foreach(raw_frames, (GFunc)process_frame, &pinfo);
+        //process_frame(g_slist_nth_data(raw_frames, 0), &pinfo);
+        g_slist_foreach(raw_frames, (GFunc) process_frame, &pinfo);
         // frames = g_slist_reverse(frames);
 
-        fpi_do_movement_estimation(&assembly_ctx, frames);
-        FpImage *img = fpi_assemble_frames(&assembly_ctx, frames);
+        //fpi_do_movement_estimation(&assembly_ctx, frames);
+        FpImage* img = fp_image_new(GOODIX511_WIDTH, GOODIX511_HEIGHT);
+        memcpy(img->data, g_slist_nth_data(frames, 0), GOODIX511_FRAME_SIZE);
+        //FpImage* img = fpi_assemble_frames(&assembly_ctx, frames);
         img->flags |= FPI_IMAGE_PARTIAL;
 
         g_slist_free_full(frames, g_free);
