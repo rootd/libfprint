@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "sigfm/sigfm.hpp"
 #define FP_COMPONENT "image"
 
 #include "fpi-image.h"
@@ -160,6 +161,8 @@ typedef struct
 {
   GAsyncReadyCallback user_cb;
   struct fp_minutiae *minutiae;
+  SfmImgInfo        * sfm_info;
+
   gint                width, height;
   gdouble             ppmm;
   FpiImageFlags       flags;
@@ -173,6 +176,7 @@ fp_image_detect_minutiae_free (DetectMinutiaeData *data)
   g_clear_pointer (&data->image, g_free);
   g_clear_pointer (&data->minutiae, free_minutiae);
   g_clear_pointer (&data->binarized, g_free);
+  g_clear_pointer (&data->sfm_info, sfm_free_info);
   g_free (data);
 }
 
@@ -201,7 +205,7 @@ fp_image_detect_minutiae_cb (GObject      *source_object,
       g_clear_pointer (&image->minutiae, g_ptr_array_unref);
       image->minutiae = g_ptr_array_new_full (data->minutiae->num,
                                               (GDestroyNotify) free_minutia);
-
+      image->sfm_info = g_steal_pointer (&data->sfm_info);
       for (i = 0; i < data->minutiae->num; i++)
         g_ptr_array_add (image->minutiae,
                          g_steal_pointer (&data->minutiae->list[i]));
@@ -309,6 +313,7 @@ fp_image_detect_minutiae_thread_func (GTask        *task,
 
   data->binarized = g_steal_pointer (&bdata);
   data->minutiae = minutiae;
+  data->sfm_info = sfm_extract (data->image, data->width, data->height);
 
   if (r)
     {
@@ -426,6 +431,12 @@ GPtrArray *
 fp_image_get_minutiae (FpImage *self)
 {
   return self->minutiae;
+}
+
+SfmImgInfo *
+fp_image_get_sfm_info (FpImage * self)
+{
+  return self->sfm_info;
 }
 
 /**
