@@ -429,9 +429,8 @@ static void activate_complete(FpiSsm *ssm, FpDevice *dev, GError *error)
 
 // ---- SCAN SECTION START ----
 
-enum SCAN_STAGES
-{
-    SCAN_STAGE_CALIBRATE,
+enum SCAN_STAGES {
+    SCAN_STAGE_QUERY_MCU,
     SCAN_STAGE_SWITCH_TO_FDT_MODE,
     SCAN_STAGE_SWITCH_TO_FDT_DOWN,
     SCAN_STAGE_GET_IMG,
@@ -746,14 +745,23 @@ const guint8 fdt_switch_state_down[] = {
     0xb7,
 };
 
-static void scan_run_state(FpiSsm *ssm, FpDevice *dev)
+static void query_mcu_state_cb(FpDevice* dev, guchar* mcu_state, guint16 len,
+                               gpointer ssm, GError* error)
+{
+    if (error) {
+        fpi_ssm_mark_failed(ssm, error);
+        return;
+    }
+    fpi_ssm_next_state(ssm);
+}
+
+static void scan_run_state(FpiSsm* ssm, FpDevice* dev)
 {
     FpImageDevice *img_dev = FP_IMAGE_DEVICE(dev);
 
-    switch (fpi_ssm_get_cur_state(ssm))
-    {
-    case SCAN_STAGE_CALIBRATE:
-        fpi_ssm_next_state(ssm);
+    switch (fpi_ssm_get_cur_state(ssm)) {
+    case SCAN_STAGE_QUERY_MCU:
+        goodix_send_query_mcu_state(dev, query_mcu_state_cb, ssm);
         break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:
