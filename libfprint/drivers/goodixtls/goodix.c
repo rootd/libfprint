@@ -1232,12 +1232,13 @@ enum goodix_tls_handshake_stages
 static void on_tls_successfully_established(FpDevice *dev, gpointer user_data,
                                             GError *error)
 {
-  fp_dbg("HANDSHAKE DONE");
-  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS(dev);
-  FpiDeviceGoodixTlsPrivate *priv =
-      fpi_device_goodixtls_get_instance_private(self);
-  ((GoodixNoneCallback)priv->tls_ready_callback->callback)(
-      dev, priv->tls_ready_callback->user_data, NULL);
+    fp_dbg("HANDSHAKE DONE");
+    FpiDeviceGoodixTls* self = FPI_DEVICE_GOODIXTLS(dev);
+    FpiDeviceGoodixTlsPrivate* priv =
+        fpi_device_goodixtls_get_instance_private(self);
+    ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
+        dev, priv->tls_ready_callback->user_data, NULL);
+    g_clear_pointer(&priv->tls_ready_callback, g_free);
 }
 static void tls_handshake_done(FpiSsm *ssm, FpDevice *dev, GError *error)
 {
@@ -1421,6 +1422,7 @@ static void goodix_tls_ready_image_handler(FpDevice *dev, guint8 *data,
   }
 
   callback(dev, buff, read_size, cb_info->user_data, NULL);
+  free(buff);
   g_free(cb_info);
 }
 
