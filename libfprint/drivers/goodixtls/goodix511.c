@@ -608,14 +608,6 @@ static void save_frame(FpiDeviceGoodixTls511 *self, guint8 *raw)
     Goodix511Pix *frame = malloc(GOODIX511_FRAME_SIZE * sizeof(Goodix511Pix));
     decode_frame(frame, raw);
     self->frames = g_slist_append(self->frames, frame);
-#ifdef GOODIX511_DUMP_FRAMES
-    char buff[2014];
-    snprintf(buff, sizeof(buff), "cut2/f_%d.pgm", g_slist_length(self->frames));
-    FpImage *img = fp_image_new(GOODIX511_WIDTH, GOODIX511_HEIGHT);
-    postprocess_frame(frame, self->empty_img);
-    squash_frame_linear(frame, img->data);
-    save_image_to_pgm(img, buff);
-#endif
 }
 
 static void scan_on_read_img(FpDevice *dev, guint8 *data, guint16 len,
@@ -656,10 +648,16 @@ static void scan_on_read_img(FpDevice *dev, guint8 *data, guint16 len,
         memcpy(img->data, g_slist_nth_data(frames, 0), GOODIX511_FRAME_SIZE);
         //FpImage* img = fpi_assemble_frames(&assembly_ctx, frames);
         img->flags |= FPI_IMAGE_PARTIAL;
+#ifdef GOODIX511_DUMP_FRAMES
+        char buff[2014];
+        snprintf(buff, sizeof(buff), "cut33/f_%d.pgm",
+                 g_slist_length(self->frames));
+        save_image_to_pgm(img, buff);
+#endif
 
         g_slist_free_full(frames, g_free);
-        // g_slist_free_full(self->frames, g_free);
-        // self->frames = g_slist_alloc();
+        g_slist_free_full(self->frames, g_free);
+        self->frames = g_slist_alloc();
 
         fpi_image_device_image_captured(img_dev, img);
         fpi_image_device_report_finger_status(img_dev, FALSE);
@@ -881,6 +879,8 @@ static void fpi_device_goodixtls511_class_init(
     dev_class->full_name = "Goodix TLS Fingerprint Sensor 511";
     dev_class->type = FP_DEVICE_TYPE_USB;
     dev_class->id_table = id_table;
+    dev_class->nr_enroll_stages = 10;
+    // dev_class->enroll = enroll;
 
     dev_class->scan_type = FP_SCAN_TYPE_PRESS;
 
