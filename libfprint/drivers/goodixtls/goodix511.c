@@ -28,8 +28,7 @@
 #include "glibconfig.h"
 #include "gusb/gusb-device.h"
 #include <stdio.h>
-#include <stdlib.h>
-#define FP_COMPONENT "goodixtls511"
+#include <stdlib.h> #define FP_COMPONENT "goodixtls511"
 
 #include <glib.h>
 #include <string.h>
@@ -81,8 +80,8 @@ enum activate_states
     ACTIVATE_CHECK_PSK,
     ACTIVATE_RESET,
     ACTIVATE_SET_MCU_IDLE,
-    ACTIVATE_SET_ODP,
-    ACTIVATE_SET_MCU_CONFIG,
+    ACTIVATE_READ_ODP,
+    ACTIVATE_UPLOAD_MCU_CONFIG,
     ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY,
     ACTIVATE_NUM_STATES,
 };
@@ -350,9 +349,8 @@ static void read_otp_callback(FpDevice *dev, guint8 *data, guint16 len,
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev)
 {
-
-    switch (fpi_ssm_get_cur_state(ssm))
-    {
+    FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
+    switch (fpi_ssm_get_cur_state(ssm)) {
     case ACTIVATE_READ_AND_NOP:
         // Nop seems to clear the previous command buffer. But we are
         // unable to do so.
@@ -380,15 +378,13 @@ static void activate_run_state(FpiSsm *ssm, FpDevice *dev)
     case ACTIVATE_RESET:
         goodix_send_reset(dev, TRUE, 20, check_reset, ssm);
         break;
-
     case ACTIVATE_SET_MCU_IDLE:
         goodix_send_mcu_switch_to_idle_mode(dev, 20, check_idle, ssm);
         break;
-
-    case ACTIVATE_SET_ODP:
+    case ACTIVATE_READ_ODP:
         goodix_send_read_otp(dev, read_otp_callback, ssm);
         break;
-    case ACTIVATE_SET_MCU_CONFIG:
+    case ACTIVATE_UPLOAD_MCU_CONFIG:
         goodix_send_upload_config_mcu(dev, goodix_511_config,
                                       sizeof(goodix_511_config), NULL,
                                       check_config_upload, ssm);
@@ -783,6 +779,7 @@ static void scan_complete(FpiSsm *ssm, FpDevice *dev, GError *error)
     if (error)
     {
         fp_err("failed to scan: %s (code: %d)", error->message, error->code);
+        fpi_image_device_session_error(FP_IMAGE_DEVICE(dev), error);
         return;
     }
     fp_dbg("finished scan");
