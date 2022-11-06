@@ -28,7 +28,9 @@
 #include "glibconfig.h"
 #include "gusb/gusb-device.h"
 #include <stdio.h>
-#include <stdlib.h> #define FP_COMPONENT "goodixtls511"
+#include <stdlib.h>
+
+#define FP_COMPONENT "goodixtls511"
 
 #include <glib.h>
 #include <string.h>
@@ -349,7 +351,6 @@ static void read_otp_callback(FpDevice *dev, guint8 *data, guint16 len,
 
 static void activate_run_state(FpiSsm *ssm, FpDevice *dev)
 {
-    FpiDeviceGoodixTls511* self = FPI_DEVICE_GOODIXTLS511(dev);
     switch (fpi_ssm_get_cur_state(ssm)) {
     case ACTIVATE_READ_AND_NOP:
         // Nop seems to clear the previous command buffer. But we are
@@ -449,16 +450,6 @@ static void check_none_cmd(FpDevice *dev, guint8 *data, guint16 len,
     fpi_ssm_next_state(ssm);
 }
 
-static unsigned char get_pix(struct fpi_frame_asmbl_ctx *ctx,
-                             struct fpi_frame *frame, unsigned int x,
-                             unsigned int y)
-{
-    return frame->data[x + y * GOODIX511_WIDTH];
-}
-
-// Bitdepth is 12, but we have to fit it in a byte
-static unsigned char squash(int v) { return v / 16; }
-
 static void decode_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
                          const guint8 *raw_frame)
 {
@@ -482,31 +473,7 @@ static void decode_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
         }
     }
 }
-static int goodix_cmp_short(const void *a, const void *b)
-{
-    return (int)(*(short *)a - *(short *)b);
-}
 
-static void rotate_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE])
-{
-    Goodix511Pix buff[GOODIX511_FRAME_SIZE];
-
-    for (int y = 0; y != GOODIX511_HEIGHT; ++y)
-    {
-        for (int x = 0; x != GOODIX511_WIDTH; ++x)
-        {
-            buff[x * GOODIX511_WIDTH + y] = frame[x + y * GOODIX511_WIDTH];
-        }
-    }
-    memcpy(frame, buff, GOODIX511_FRAME_SIZE);
-}
-static void squash_frame(Goodix511Pix *frame, guint8 *squashed)
-{
-    for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i)
-    {
-        squashed[i] = squash(frame[i]);
-    }
-}
 /**
  * @brief Squashes the 12 bit pixels of a raw frame into the 4 bit pixels used
  * by libfprint.
@@ -548,45 +515,9 @@ static void squash_frame_linear(Goodix511Pix *frame, guint8 *squashed)
     }
 }
 
-/**
- * @brief Subtracts the background from the frame
- *
- * @param frame
- * @param background
- */
-static gboolean postprocess_frame(Goodix511Pix frame[GOODIX511_FRAME_SIZE],
-                                  Goodix511Pix background[GOODIX511_FRAME_SIZE])
-{
-    int sum = 0;
-    for (int i = 0; i != GOODIX511_FRAME_SIZE; ++i)
-    {
-        Goodix511Pix *og_px = frame + i;
-        Goodix511Pix bg_px = background[i];
-
-        if (*og_px >= bg_px)
-        {
-            *og_px = 4095;
-        }
-        else
-        {
-            *og_px -= bg_px;
-        }
-
-        sum += *og_px;
-    }
-    if (sum == 0)
-    {
-        fp_warn("frame darker than background, finger on scanner during "
-                "calibration?");
-    }
-
-    return sum != 0;
-}
-
-typedef struct _frame_processing_info
-{
-    FpiDeviceGoodixTls511 *dev;
-    GSList **frames;
+typedef struct _frame_processing_info {
+    FpiDeviceGoodixTls511* dev;
+    GSList** frames;
 
 } frame_processing_info;
 
@@ -598,7 +529,7 @@ static void process_frame(Goodix511Pix *raw_frame, frame_processing_info *info)
     *(info->frames) = g_slist_append(*(info->frames), frame);
 }
 
-static void save_frame(FpiDeviceGoodixTls511 *self, guint8 *raw)
+static void save_frame(FpiDeviceGoodixTls511* self, guint8* raw)
 {
     Goodix511Pix *frame = malloc(GOODIX511_FRAME_SIZE * sizeof(Goodix511Pix));
     decode_frame(frame, raw);
@@ -624,12 +555,7 @@ static void scan_on_read_img(FpDevice *dev, guint8 *data, guint16 len,
     {
         GSList *raw_frames = g_slist_nth(self->frames, 1);
 
-        FpImageDevice *img_dev = FP_IMAGE_DEVICE(dev);
-        struct fpi_frame_asmbl_ctx assembly_ctx;
-        assembly_ctx.frame_width = GOODIX511_WIDTH;
-        assembly_ctx.frame_height = GOODIX511_HEIGHT;
-        assembly_ctx.image_width = GOODIX511_WIDTH * 2;
-        assembly_ctx.get_pixel = get_pix;
+        FpImageDevice* img_dev = FP_IMAGE_DEVICE(dev);
 
         GSList *frames = NULL;
         frame_processing_info pinfo = {.dev = self, .frames = &frames};
@@ -661,52 +587,7 @@ static void scan_on_read_img(FpDevice *dev, guint8 *data, guint16 len,
     }
 }
 
-enum scan_empty_img_state
-{
-    SCAN_EMPTY_NAV0,
-    SCAN_EMPTY_GET_IMG,
-
-    SCAN_EMPTY_NUM,
-};
-
-static void on_scan_empty_img(FpDevice *dev, guint8 *data, guint16 length,
-                              gpointer ssm, GError *error)
-{
-    if (error)
-    {
-        fpi_ssm_mark_failed(ssm, error);
-        return;
-    }
-    FpiDeviceGoodixTls511 *self = FPI_DEVICE_GOODIXTLS511(dev);
-    decode_frame(self->empty_img, data);
-#ifdef GOODIX511_DUMP_FRAMES
-    FpImage *bgk = fp_image_new(GOODIX511_WIDTH, GOODIX511_HEIGHT);
-    squash_frame(self->empty_img, bgk->data);
-    save_image_to_pgm(bgk, "./background.pgm");
-#endif
-    fpi_ssm_next_state(ssm);
-}
-static void scan_empty_run(FpiSsm *ssm, FpDevice *dev)
-{
-
-    switch (fpi_ssm_get_cur_state(ssm))
-    {
-    case SCAN_EMPTY_NAV0:
-        goodix_send_nav_0(dev, check_none_cmd, ssm);
-        break;
-
-    case SCAN_EMPTY_GET_IMG:
-        goodix_tls_read_image(dev, on_scan_empty_img, ssm);
-        break;
-    }
-}
-
-static void scan_empty_img(FpDevice *dev, FpiSsm *ssm)
-{
-    fpi_ssm_start_subsm(ssm, fpi_ssm_new(dev, scan_empty_run, SCAN_EMPTY_NUM));
-}
-
-static void scan_get_img(FpDevice *dev, FpiSsm *ssm)
+static void scan_get_img(FpDevice* dev, FpiSsm* ssm)
 {
     goodix_tls_read_image(dev, scan_on_read_img, ssm);
 }
@@ -869,12 +750,12 @@ static void fpi_device_goodixtls511_init(FpiDeviceGoodixTls511 *self)
     self->frames = g_slist_alloc();
 }
 
-static void fpi_device_goodixtls511_class_init(
-    FpiDeviceGoodixTls511Class *class)
+static void
+fpi_device_goodixtls511_class_init(FpiDeviceGoodixTls511Class* class)
 {
-    FpiDeviceGoodixTlsClass *gx_class = FPI_DEVICE_GOODIXTLS_CLASS(class);
-    FpDeviceClass *dev_class = FP_DEVICE_CLASS(class);
-    FpImageDeviceClass *img_dev_class = FP_IMAGE_DEVICE_CLASS(class);
+    FpiDeviceGoodixTlsClass* gx_class = FPI_DEVICE_GOODIXTLS_CLASS(class);
+    FpDeviceClass* dev_class = FP_DEVICE_CLASS(class);
+    FpImageDeviceClass* img_dev_class = FP_IMAGE_DEVICE_CLASS(class);
 
     gx_class->interface = GOODIX_511_INTERFACE;
     gx_class->ep_in = GOODIX_511_EP_IN;

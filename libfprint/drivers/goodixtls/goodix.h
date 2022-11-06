@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include "drivers_api.h"
+
 // 1 seconds USB timeout
 #define GOODIX_TIMEOUT (1000)
 
