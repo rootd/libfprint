@@ -598,7 +598,6 @@ typedef struct _frame_processing_info
 static void process_frame(Goodix511Pix *raw_frame, frame_processing_info *info)
 {
     unsigned char* frame = g_malloc(GOODIX511_FRAME_SIZE);
-    postprocess_frame(raw_frame, info->dev->empty_img);
     squash_frame_linear(raw_frame, frame);
 
     *(info->frames) = g_slist_append(*(info->frames), frame);
@@ -760,7 +759,7 @@ static void scan_run_state(FpiSsm *ssm, FpDevice *dev)
     switch (fpi_ssm_get_cur_state(ssm))
     {
     case SCAN_STAGE_CALIBRATE:
-        scan_empty_img(dev, ssm);
+        fpi_ssm_next_state(ssm);
         break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:
