@@ -454,6 +454,8 @@ enum SCAN_STAGES {
   SCAN_STAGE_SWITCH_TO_FDT_MODE,
   SCAN_STAGE_SWITCH_TO_FDT_DOWN,
   SCAN_STAGE_GET_IMG,
+  SCAN_STAGE_SWITCH_TO_FTD_UP,
+  SCAN_STAGE_SWITCH_TO_FTD_DONE,
 
   SCAN_STAGE_NUM,
 };
@@ -602,7 +604,6 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
       self->frames = g_slist_alloc ();
 
       fpi_image_device_image_captured (img_dev, img);
-      fpi_image_device_report_finger_status (img_dev, FALSE);
 
       fpi_ssm_next_state (ssm);
     }
@@ -647,6 +648,22 @@ const guint8 fdt_switch_state_down[] = {
   0x80,
   0xb7,
 };
+const guint8 fdt_switch_state_up[] = {
+    0x0e,
+    0x01,
+    0x80,
+    0xaf,
+    0x80,
+    0xbf,
+    0x80,
+    0xa3,
+    0x80,
+    0xb7,
+    0x80,
+    0xa7,
+    0x80,
+    0xb6
+};
 
 static void
 query_mcu_state_cb (FpDevice * dev, guchar * mcu_state, guint16 len,
@@ -686,6 +703,14 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
     case SCAN_STAGE_GET_IMG:
       fpi_image_device_report_finger_status (img_dev, TRUE);
       scan_get_img (dev, ssm);
+      break;
+    case SCAN_STAGE_SWITCH_TO_FTD_UP:
+      goodix_send_mcu_switch_to_fdt_up (dev, (guint8 *) fdt_switch_state_up,
+                                          sizeof (fdt_switch_state_up), NULL,
+                                          check_none_cmd, ssm);
+      break;
+    case SCAN_STAGE_SWITCH_TO_FTD_DONE:
+      fpi_image_device_report_finger_status(img_dev, FALSE);
       break;
     }
 }
