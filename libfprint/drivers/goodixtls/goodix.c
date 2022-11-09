@@ -939,7 +939,7 @@ goodix_send_reset (FpDevice *dev, gboolean reset_sensor, guint8 sleep_time,
 }
 
 void
-goodix_send_firmware_version (FpDevice                     *dev,
+goodix_send_query_firmware_version (FpDevice                     *dev,
                               GoodixFirmwareVersionCallback callback,
                               gpointer                      user_data)
 {
@@ -1380,13 +1380,7 @@ goodix_tls_ready (GoodixTlsServer *server, GError *err, gpointer dev)
 }
 
 void
-goodix_tls_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
-{
-  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-}
-
-void
-goodix_tls (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
 {
   fp_dbg ("Starting up goodix tls server");
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);

@@ -380,7 +380,7 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
       break;
 
     case ACTIVATE_CHECK_FW_VER:
-      goodix_send_firmware_version (dev, check_firmware_version, ssm);
+      goodix_send_query_firmware_version (dev, check_firmware_version, ssm);
       break;
 
     case ACTIVATE_CHECK_PSK:
@@ -433,7 +433,7 @@ activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
   G_DEBUG_HERE ();
   if (!error)
     {
-      goodix_tls (dev, tls_activation_complete, NULL);
+      goodix_tls_init (dev, tls_activation_complete, NULL);
     }
   else
     {
