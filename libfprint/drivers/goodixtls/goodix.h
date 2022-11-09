@@ -278,8 +278,7 @@ void goodix_send_mcu_get_image (FpDevice           *dev,
  * @brief Tell the device we want to wait for the user to present their finger
  *
  * @param dev
- * @param mode magic bytes for the device fdt down, unknown if varies from device to device
- * @param length length of the mode bytes
+ * @param mode magic bytes
  * @param free_func function to free the mode bytes or NULL
  * @param callback called once the user has presented their finger or with an error. Note may be called at once if the mode bytes are wrong
  * @param user_data
@@ -295,8 +294,7 @@ void goodix_send_mcu_switch_to_fdt_down (FpDevice             *dev,
  * @brief Tell the device we want to wait for the user to lift their finger off
  *
  * @param dev
- * @param mode magic bytes for the device fdt up, unknown if varies from device to device
- * @param length length of the mode bytes
+ * @param mode magic bytes
  * @param free_func function to free the mode bytes or NULL
  * @param callback called once the user has presented their finger or with an error. Note may be called at once if the mode bytes are wrong
  * @param user_data
@@ -311,8 +309,7 @@ void goodix_send_mcu_switch_to_fdt_up (FpDevice             *dev,
  * @brief Prep the device for fdt down and fdt up commands
  *
  * @param dev
- * @param mode magic bytes, may vary from device to device
- * @param length length of mode bytes
+ * @param mode magic bytes
  * @param free_func function to free mode bytes or NULL
  * @param callback
  * @param user_data
