@@ -136,20 +136,35 @@ typedef struct __attribute__((__packed__)) _GoodixNone
   guint16 : 16;
 } GoodixNone;
 
-guint8 goodix_calc_checksum(guint8 *data, guint16 length);
+guint8 goodix_calc_checksum (guint8 *data,
+                             guint16 length);
 
-void goodix_encode_pack(guint8 flags, guint8 *payload, guint16 payload_len,
-                        gboolean pad_data, guint8 **data, guint32 *data_len);
+void goodix_encode_pack (guint8   flags,
+                         guint8  *payload,
+                         guint16  payload_len,
+                         gboolean pad_data,
+                         guint8 **data,
+                         guint32 *data_len);
 
-void goodix_encode_protocol(guint8 cmd, guint8 *payload, guint16 payload_len,
-                            gboolean calc_checksum, gboolean pad_data,
-                            guint8 **data, guint32 *data_len);
+void goodix_encode_protocol (guint8   cmd,
+                             guint8  *payload,
+                             guint16  payload_len,
+                             gboolean calc_checksum,
+                             gboolean pad_data,
+                             guint8 **data,
+                             guint32 *data_len);
 
-gboolean goodix_decode_pack(guint8 *data, guint32 data_len, guint8 *flags,
-                            guint8 **payload, guint16 *payload_len,
-                            gboolean *valid_checksum);
+gboolean goodix_decode_pack (guint8   *data,
+                             guint32   data_len,
+                             guint8   *flags,
+                             guint8  **payload,
+                             guint16  *payload_len,
+                             gboolean *valid_checksum);
 
-gboolean goodix_decode_protocol(guint8 *data, guint32 data_len, guint8 *cmd,
-                                guint8 **payload, guint16 *payload_len,
-                                gboolean *valid_checksum,
-                                gboolean *valid_null_checksum);
+gboolean goodix_decode_protocol (guint8   *data,
+                                 guint32   data_len,
+                                 guint8   *cmd,
+                                 guint8  **payload,
+                                 guint16  *payload_len,
+                                 gboolean *valid_checksum,
+                                 gboolean *valid_null_checksum);
