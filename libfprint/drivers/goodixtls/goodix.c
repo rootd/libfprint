@@ -1218,17 +1218,6 @@ enum tls_states {
   TLS_NUM_STATES,
 };
 
-static void
-on_goodix_tls_server_ready (GoodixTlsServer *server, GError *err,
-                            gpointer dev)
-{
-  if (err)
-    {
-      fp_err ("server ready failed: %s", err->message);
-      return;
-    }
-  fp_dbg ("TLS connection ready");
-}
 
 static void
 on_goodix_tls_read_handshake (FpDevice *dev, guint8 *data,
@@ -1249,7 +1238,7 @@ on_goodix_tls_read_handshake (FpDevice *dev, guint8 *data,
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
 
-  int sent = goodix_tls_client_send (priv->tls_hop, data, length);
+  int sent = goodix_tls_client_write (priv->tls_hop, data, length);
 
   if (sent < 0)
     {
@@ -1305,7 +1294,7 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
   if (stage == TLS_HANDSHAKE_STAGE_HELLO_S)
     {
       guint8 buff[1024];
-      int size = goodix_tls_client_recv (priv->tls_hop, buff, sizeof (buff));
+      int size = goodix_tls_client_read (priv->tls_hop, buff, sizeof (buff));
       if (size < 0)
         {
           fpi_ssm_mark_failed (ssm, g_error_new (g_io_error_quark (), size,
@@ -1331,7 +1320,7 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
     {
       fp_dbg ("Reading to proxy back");
       guint8 buff[1024];
-      int size = goodix_tls_client_recv (priv->tls_hop, buff, sizeof (buff));
+      int size = goodix_tls_client_read (priv->tls_hop, buff, sizeof (buff));
       if (size < 0)
         {
           fpi_ssm_mark_failed (ssm, g_error_new (g_io_error_quark (), size,
@@ -1372,7 +1361,7 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
 
-  goodix_tls_client_send (priv->tls_hop, data, length);
+  goodix_tls_client_write (priv->tls_hop, data, length);
 
   do_tls_handshake (dev);
 }
@@ -1411,7 +1400,6 @@ goodix_tls (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
   priv->tls_ready_callback->callback = G_CALLBACK (callback);
   priv->tls_ready_callback->user_data = user_data;
   GoodixTlsServer *s = priv->tls_hop;
-  s->connection_callback = on_goodix_tls_server_ready;
   s->user_data = self;
   GError *err = NULL;
   if (!goodix_tls_server_init (priv->tls_hop, &err))
@@ -1459,12 +1447,12 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
 
-  goodix_tls_client_send (priv->tls_hop, data, length);
+  goodix_tls_client_write (priv->tls_hop, data, length);
 
   const guint16 size = -1;
   guint8 *buff = malloc (size);
   GError *err = NULL;
-  int read_size = goodix_tls_server_receive (priv->tls_hop, buff, size, &err);
+  int read_size = goodix_tls_server_read (priv->tls_hop, buff, size, &err);
 
   if (read_size <= 0)
     {

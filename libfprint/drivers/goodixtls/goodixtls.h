@@ -21,82 +21,88 @@
 
 #include <glib.h>
 
-#include <stdatomic.h>
-
-#define GOODIX_TLS_SERVER_PORT 4433
-
-// static const guint8 goodix_511_psk_0[64] = {0};
-static const guint8 goodix_511_psk_0[] = {
-  0xba, 0x1a, 0x86, 0x03, 0x7c, 0x1d, 0x3c, 0x71, 0xc3, 0xaf, 0x34,
-  0x49, 0x55, 0xbd, 0x69, 0xa9, 0xa9, 0x86, 0x1d, 0x9e, 0x91, 0x1f,
-  0xa2, 0x49, 0x85, 0xb6, 0x77, 0xe8, 0xdb, 0xd7, 0x2d, 0x43};
-
 struct _GoodixTlsServer;
 
-typedef void (*GoodixTlsServerSendCallback)(struct _GoodixTlsServer *self,
-                                            guint8                  *data,
-                                            guint16                  length);
 
-typedef void (*GoodixTlsServerConnectionCallback)(struct _GoodixTlsServer *self,
-                                                  GError                  *error,
-                                                  gpointer                 user_data);
-
-typedef void (*GoodixTlsServerDecodedCallback)(struct _GoodixTlsServer *self,
-                                               guint8                  *data,
-                                               gsize                    length,
-                                               GError                  *error);
-
+/**
+ * @brief TLS server context for goodix devices
+ * @details This works by creating an openssl TLS server and a socket for the client and server end.
+ * Raw data is read and written on the client-side and is intended to be passed directly to and from
+ * the sensor (so it acts as the client). The server-side meanwhile provides a way to decrypt the data
+ * from the sensor by reading out of the server socket with openssl
+ * @struct GoodixTlsServer
+ */
 typedef struct _GoodixTlsServer
 {
-  // This callback should be called when a TLS packet must be send to the
-  // device
-  // GoodixTlsServerSendCallback send_callback;
-
-  // This callback should be called when the connection is established. The
-  // error should be NULL. It can also be called when the connection fail. In
-  // this case, the error should not be NULL.
-  GoodixTlsServerConnectionCallback connection_callback;
-
-  // This callback should be called when a TLS packet is decoded. The error
-  // should be NULL.
-  // It can also be called when the server fail to decode a packet. In this
-  // case, the error should not be NULL.
-  // GoodixTlsServerDecodedCallback decoded_callback;
-
-  // Put what you need here.
   gpointer  user_data;  // Passed to all callbacks
+
   SSL_CTX  *ssl_ctx;
-  int       sock_fd;
   SSL      *ssl_layer;
-  // SSL* cli_ssl_layer;
+
+  int       sock_fd;
   int       client_fd;
+
   pthread_t serve_thread;
 } GoodixTlsServer;
 
-// This is called only once to init the TLS server.
-// Return TRUE on success, FALSE otherwise and error should be set.
+/**
+ * @brief Initalise the server
+ *
+ * @param self context to init
+ * @param error output error
+ * @return gboolean TRUE on success, FALSE otherwise
+ */
 gboolean goodix_tls_server_init (GoodixTlsServer *self,
                                  GError         **error);
 
-gboolean goodix_tls_init_cli (GoodixTlsServer *self,
-                              GError         **err);
+/**
+ * @brief Read a message from the server side of the TLS connection.
+ *  i.e. decrypt the message last written with goodix_tls_client_write()
+ *
+ * @param self server context
+ * @param data buffer to read the data into
+ * @param length length of the data expected, buffer should be at least this size
+ * @param error output error
+ * @return int bytes read or <=0 in case of error
+ */
+int goodix_tls_server_read (GoodixTlsServer *self,
+                            guint8          *data,
+                            guint32          length,
+                            GError         **error);
 
-// This can be called multiple times. It is called when the device send a TLS
-// packet.
-int goodix_tls_server_receive (GoodixTlsServer *self,
-                               guint8          *data,
-                               guint32          length,
-                               GError         **error);
+/**
+ * @brief Write a message directly to the client end of the TLS connection.
+ *  This should be used to dump encrypted data directly from the device
+ *  to be decrypted by goodix_tls_server_read()
+ *
+ * @param self
+ * @param data buffer to write
+ * @param length length of data to be written
+ * @return int bytes written or -1 in case of error
+ */
+int goodix_tls_client_write (GoodixTlsServer *self,
+                             guint8          *data,
+                             guint16          length);
 
-int goodix_tls_client_send (GoodixTlsServer *self,
+/**
+ * @brief Read an encrypted response from the client end of the TLS connection.
+ *  This is needed for e.g. handshaking
+ *
+ * @param self
+ * @param data buffer to read into
+ * @param length length of buffer
+ * @return int bytes read or -1 for error or 0 for EOF
+ */
+int goodix_tls_client_read (GoodixTlsServer *self,
                             guint8          *data,
                             guint16          length);
 
-int goodix_tls_client_recv (GoodixTlsServer *self,
-                            guint8          *data,
-                            guint16          length);
-
-// This is called only once to deinit the TLS server.
-// Return TRUE on success, FALSE otherwise and error should be set.
+/**
+ * @brief Shutdown the TLS server
+ *
+ * @param self context to shutdown
+ * @param error output error
+ * @return gboolean TRUE on success, FALSE otherwise
+ */
 gboolean goodix_tls_server_deinit (GoodixTlsServer *self,
                                    GError         **error);

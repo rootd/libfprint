@@ -58,20 +58,18 @@ tls_server_psk_server_callback (SSL           *ssl,
                                 unsigned char *psk,
                                 unsigned int   max_psk_len)
 {
-  if (sizeof (goodix_511_psk_0) > max_psk_len)
+  const int len = 32;
+
+  fp_dbg ("PSK WANTED %d", max_psk_len);
+  if (len > max_psk_len)
     {
-      fp_dbg ("Provided PSK R is too long for OpenSSL");
+      fp_err ("max psk length (%d) too short (needs %d)", max_psk_len, len);
       return 0;
     }
-  fp_dbg ("PSK WANTED %d", max_psk_len);
-  // I don't know why we must use OPENSSL_hexstr2buf but just copying zeros
-  // doesn't work
-  const char *buff = "000000000000000000000000000000000000000000000000000000000"
-                     "0000000";
-  long len = 0;
-  unsigned char *key = OPENSSL_hexstr2buf (buff, &len);
-  memcpy (psk, key, len);
-  OPENSSL_free (key);
+
+  // zero out the psk
+  for (int n = 0; n != len; ++n)
+    psk[n] = 0;
 
   return len;
 }
@@ -103,19 +101,19 @@ tls_server_config_ctx (SSL_CTX *ctx)
 }
 
 int
-goodix_tls_client_send (GoodixTlsServer *self, guint8 *data, guint16 length)
+goodix_tls_client_write (GoodixTlsServer *self, guint8 *data, guint16 length)
 {
   return write (self->client_fd, data, length * sizeof (guint8));
 }
 int
-goodix_tls_client_recv (GoodixTlsServer *self, guint8 *data, guint16 length)
+goodix_tls_client_read (GoodixTlsServer *self, guint8 *data, guint16 length)
 {
   return read (self->client_fd, data, length * sizeof (guint8));
 }
 
 int
-goodix_tls_server_receive (GoodixTlsServer *self, guint8 *data,
-                           guint32 length, GError **error)
+goodix_tls_server_read (GoodixTlsServer *self, guint8 *data,
+                        guint32 length, GError **error)
 {
   int retr = SSL_read (self->ssl_layer, data, length * sizeof (guint8));
 
@@ -143,9 +141,9 @@ goodix_tls_init_serve (void *me)
 
   fp_dbg ("TLS server accept done");
   if (retr <= 0)
-    self->connection_callback (self, err_from_ssl (), self->user_data);
+    fp_err ("server ready failed: %s", ERR_reason_error_string (ERR_get_error ()));
   else
-    self->connection_callback (self, NULL, self->user_data);
+    fp_dbg ("TLS connection ready");
   return NULL;
 }
 
@@ -159,6 +157,7 @@ goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
   close (self->sock_fd);
 
   SSL_CTX_free (self->ssl_ctx);
+  pthread_join (self->serve_thread, NULL);
 
   return TRUE;
 }
@@ -166,7 +165,6 @@ goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
 gboolean
 goodix_tls_server_init (GoodixTlsServer *self, GError **error)
 {
-  g_assert (self->connection_callback);
   SSL_load_error_strings ();
   OpenSSL_add_ssl_algorithms ();
   SSL_library_init ();
