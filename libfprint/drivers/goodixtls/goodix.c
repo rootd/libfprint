@@ -546,7 +546,7 @@ goodix_send_pack (FpDevice *dev, guint8 flags, guint8 *payload,
 
 void
 goodix_send_protocol (
-  FpDevice *dev, guint8 cmd, guint8 *payload, guint16 length,
+  FpDevice *dev, guint8 cmd, const guint8 *payload, guint16 length,
   GDestroyNotify free_func, gboolean calc_checksum, guint timeout_ms,
   gboolean reply, GoodixCmdCallback callback, gpointer user_data)
 {
@@ -562,7 +562,7 @@ goodix_send_protocol (
       // A command is already running.
       fp_warn ("A command is already running: 0x%02x", priv->cmd);
       if (free_func)
-        free_func (payload);
+        free_func ((void *) payload);
       return;
     }
 
@@ -580,7 +580,7 @@ goodix_send_protocol (
   goodix_encode_protocol (cmd, payload, length, calc_checksum, FALSE,
                           &data, &data_len);
   if (free_func)
-    free_func (payload);
+    free_func ((void *) payload);
 
   if (!goodix_send_pack (dev, GOODIX_FLAGS_MSG_PROTOCOL, data, data_len,
                          g_free, &error))
@@ -642,13 +642,22 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
 }
 
 void
-goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, guint8 *mode,
-                                    guint16 length,
+goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 mode[13],
                                     GDestroyNotify free_func,
                                     GoodixDefaultCallback callback,
                                     gpointer user_data)
 {
-  GoodixCallbackInfo *cb_info;
+  GoodixCallbackInfo *cb_info = NULL;
+
+
+  guint8 * payload = malloc (sizeof (guint8) * 14);
+
+  memcpy (payload + 1, mode, 13);
+  payload[0] = 0xc;
+  if (free_func)
+    free_func ((void *) mode);
+
+  GoodixDefaultCallback cb = NULL;
 
   if (callback)
     {
@@ -656,24 +665,29 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, guint8 *mode,
 
       cb_info->callback = G_CALLBACK (callback);
       cb_info->user_data = user_data;
-
-      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
-                            free_func, TRUE, 0, TRUE, goodix_receive_default,
-                            cb_info);
-      return;
+      cb = goodix_receive_default;
     }
+  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, payload, 14,
+                        free, TRUE, 0, TRUE, cb,
+                        cb_info);
 
-  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
-                        free_func, TRUE, 0, TRUE, NULL, NULL);
 }
 
 void
-goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, guint8 *mode,
-                                  guint16 length, GDestroyNotify free_func,
+goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 mode[13],
+                                  GDestroyNotify free_func,
                                   GoodixDefaultCallback callback,
                                   gpointer user_data)
 {
-  GoodixCallbackInfo *cb_info;
+  GoodixCallbackInfo *cb_info = NULL;
+
+  guint8 * payload = malloc (sizeof (guint8) * 14);
+
+  memcpy (payload + 1, mode, 13);
+  payload[0] = 0xe;
+  if (free_func)
+    free_func ((void *) mode);
+  GoodixDefaultCallback cb = NULL;
 
   if (callback)
     {
@@ -681,25 +695,26 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, guint8 *mode,
 
       cb_info->callback = G_CALLBACK (callback);
       cb_info->user_data = user_data;
+      cb = goodix_receive_default;
 
-      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, mode, length,
-                            free_func, TRUE, 0, TRUE, goodix_receive_default,
-                            cb_info);
-      return;
     }
 
-  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, mode, length,
-                        free_func, TRUE, 0, TRUE, NULL, NULL);
+  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, payload, 14,
+                        free, TRUE, 0, TRUE, cb,
+                        cb_info);
 }
 
 void
-goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, guint8 *mode,
-                                    guint16 length,
+goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, const guint8 mode[13],
                                     GDestroyNotify free_func,
                                     GoodixDefaultCallback callback,
                                     gpointer user_data)
 {
-  GoodixCallbackInfo *cb_info;
+  GoodixCallbackInfo *cb_info = NULL;
+  GoodixDefaultCallback cb = NULL;
+
+  if (free_func)
+    free_func ((void *) mode);
 
   if (callback)
     {
@@ -707,15 +722,13 @@ goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, guint8 *mode,
 
       cb_info->callback = G_CALLBACK (callback);
       cb_info->user_data = user_data;
-
-      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, mode, length,
-                            free_func, TRUE, 0, TRUE, goodix_receive_default,
-                            cb_info);
-      return;
+      cb = goodix_receive_default;
     }
 
-  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, mode, length,
-                        free_func, TRUE, 0, TRUE, NULL, NULL);
+  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, mode, 13,
+                        NULL, TRUE, 0, TRUE, cb,
+                        cb_info);
+
 }
 
 void
@@ -941,8 +954,8 @@ goodix_send_reset (FpDevice *dev, gboolean reset_sensor, guint8 sleep_time,
 
 void
 goodix_send_query_firmware_version (FpDevice                     *dev,
-                              GoodixFirmwareVersionCallback callback,
-                              gpointer                      user_data)
+                                    GoodixFirmwareVersionCallback callback,
+                                    gpointer                      user_data)
 {
   GoodixNone payload = {};
   GoodixCallbackInfo *cb_info;

@@ -617,7 +617,6 @@ scan_get_img (FpDevice * dev, FpiSsm * ssm)
 }
 
 const guint8 fdt_switch_state_mode[] = {
-  0x0d,
   0x01,
   0x80,
   0xaf,
@@ -631,39 +630,6 @@ const guint8 fdt_switch_state_mode[] = {
   0xa8,
   0x80,
   0xb7,
-};
-
-const guint8 fdt_switch_state_down[] = {
-  0x0c,
-  0x01,
-  0x80,
-  0xaf,
-  0x80,
-  0xbf,
-  0x80,
-  0xa4,
-  0x80,
-  0xb8,
-  0x80,
-  0xa8,
-  0x80,
-  0xb7,
-};
-const guint8 fdt_switch_state_up[] = {
-  0x0e,
-  0x01,
-  0x80,
-  0xaf,
-  0x80,
-  0xbf,
-  0x80,
-  0xa3,
-  0x80,
-  0xb7,
-  0x80,
-  0xa7,
-  0x80,
-  0xb6
 };
 
 static void
@@ -690,14 +656,14 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:
-      goodix_send_mcu_switch_to_fdt_mode (dev, (guint8 *) fdt_switch_state_mode,
-                                          sizeof (fdt_switch_state_mode), NULL,
+      goodix_send_mcu_switch_to_fdt_mode (dev, fdt_switch_state_mode,
+                                          NULL,
                                           check_none_cmd, ssm);
       break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
-      goodix_send_mcu_switch_to_fdt_down (dev, (guint8 *) fdt_switch_state_down,
-                                          sizeof (fdt_switch_state_down), NULL,
+      goodix_send_mcu_switch_to_fdt_down (dev, fdt_switch_state_mode,
+                                          NULL,
                                           check_none_cmd, ssm);
       break;
 
@@ -707,8 +673,8 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       break;
 
     case SCAN_STAGE_SWITCH_TO_FTD_UP:
-      goodix_send_mcu_switch_to_fdt_up (dev, (guint8 *) fdt_switch_state_up,
-                                        sizeof (fdt_switch_state_up), NULL,
+      goodix_send_mcu_switch_to_fdt_up (dev, fdt_switch_state_mode,
+                                        NULL,
                                         check_none_cmd, ssm);
       break;
 

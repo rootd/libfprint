@@ -147,13 +147,13 @@ void goodix_encode_pack (guint8   flags,
                          guint8 **data,
                          guint32 *data_len);
 
-void goodix_encode_protocol (guint8   cmd,
-                             guint8  *payload,
-                             guint16  payload_len,
-                             gboolean calc_checksum,
-                             gboolean pad_data,
-                             guint8 **data,
-                             guint32 *data_len);
+void goodix_encode_protocol (guint8        cmd,
+                             const guint8 *payload,
+                             guint16       payload_len,
+                             gboolean      calc_checksum,
+                             gboolean      pad_data,
+                             guint8      **data,
+                             guint32      *data_len);
 
 gboolean goodix_decode_pack (guint8   *data,
                              guint32   data_len,

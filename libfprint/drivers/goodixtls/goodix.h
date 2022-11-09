@@ -242,7 +242,7 @@ gboolean goodix_send_pack (FpDevice      *dev,
  */
 void goodix_send_protocol (FpDevice         *dev,
                            guint8            cmd,
-                           guint8           *payload,
+                           const guint8     *payload,
                            guint16           length,
                            GDestroyNotify    free_func,
                            gboolean          calc_checksum,
@@ -285,8 +285,7 @@ void goodix_send_mcu_get_image (FpDevice           *dev,
  * @param user_data
  */
 void goodix_send_mcu_switch_to_fdt_down (FpDevice             *dev,
-                                         guint8               *mode,
-                                         guint16               length,
+                                         const guint8          mode[13],
                                          GDestroyNotify        free_func,
                                          GoodixDefaultCallback callback,
                                          gpointer              user_data);
@@ -303,8 +302,7 @@ void goodix_send_mcu_switch_to_fdt_down (FpDevice             *dev,
  * @param user_data
  */
 void goodix_send_mcu_switch_to_fdt_up (FpDevice             *dev,
-                                       guint8               *mode,
-                                       guint16               length,
+                                       const guint8          mode[13],
                                        GDestroyNotify        free_func,
                                        GoodixDefaultCallback callback,
                                        gpointer              user_data);
@@ -320,8 +318,7 @@ void goodix_send_mcu_switch_to_fdt_up (FpDevice             *dev,
  * @param user_data
  */
 void goodix_send_mcu_switch_to_fdt_mode (FpDevice             *dev,
-                                         guint8               *mode,
-                                         guint16               length,
+                                         const guint8          mode[13],
                                          GDestroyNotify        free_func,
                                          GoodixDefaultCallback callback,
                                          gpointer              user_data);
@@ -405,8 +402,8 @@ void goodix_send_reset (FpDevice           *dev,
  * @param user_data
  */
 void goodix_send_query_firmware_version (FpDevice                     *dev,
-                                   GoodixFirmwareVersionCallback callback,
-                                   gpointer                      user_data);
+                                         GoodixFirmwareVersionCallback callback,
+                                         gpointer                      user_data);
 
 /**
  * @brief Ask the device what the current mcu state is
@@ -546,8 +543,8 @@ void goodix_read_tls (FpDevice         *dev,
  * @param user_data
  */
 void goodix_tls_init (FpDevice          *dev,
-                 GoodixNoneCallback callback,
-                 gpointer           user_data);
+                      GoodixNoneCallback callback,
+                      gpointer           user_data);
 
 /**
  * @brief Shutdown TLS communication with the device
