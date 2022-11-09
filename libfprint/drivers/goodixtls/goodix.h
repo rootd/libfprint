@@ -408,6 +408,13 @@ void goodix_send_query_firmware_version (FpDevice                     *dev,
                                    GoodixFirmwareVersionCallback callback,
                                    gpointer                      user_data);
 
+/**
+ * @brief Ask the device what the current mcu state is
+ *
+ * @param dev
+ * @param callback
+ * @param user_data
+ */
 void goodix_send_query_mcu_state (FpDevice             *dev,
                                   GoodixDefaultCallback callback,
                                   gpointer              user_data);
@@ -436,6 +443,17 @@ void goodix_send_tls_successfully_established (FpDevice          *dev,
                                                GoodixNoneCallback callback,
                                                gpointer           user_data);
 
+/**
+ * @brief Set the device preset psk. May not work for all device firmware versions
+ *
+ * @param dev
+ * @param flags
+ * @param psk
+ * @param length
+ * @param free_func
+ * @param callback
+ * @param user_data
+ */
 void goodix_send_preset_psk_write (FpDevice             *dev,
                                    guint32               flags,
                                    guint8               *psk,
@@ -444,6 +462,15 @@ void goodix_send_preset_psk_write (FpDevice             *dev,
                                    GoodixSuccessCallback callback,
                                    gpointer              user_data);
 
+/**
+ * @brief Ask the device what preset psk it has
+ *
+ * @param dev
+ * @param flags flags for the command, possibly device specific?
+ * @param length
+ * @param callback
+ * @param user_data
+ */
 void goodix_send_preset_psk_read (FpDevice                   *dev,
                                   guint32                     flags,
                                   guint16                     length,
