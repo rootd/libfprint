@@ -284,7 +284,8 @@ void goodix_send_mcu_get_image (FpDevice           *dev,
  * @param user_data
  */
 void goodix_send_mcu_switch_to_fdt_down (FpDevice             *dev,
-                                         const guint8          mode[13],
+                                         const guint8         *mode,
+                                         guint16               length,
                                          GDestroyNotify        free_func,
                                          GoodixDefaultCallback callback,
                                          gpointer              user_data);
@@ -300,7 +301,8 @@ void goodix_send_mcu_switch_to_fdt_down (FpDevice             *dev,
  * @param user_data
  */
 void goodix_send_mcu_switch_to_fdt_up (FpDevice             *dev,
-                                       const guint8          mode[13],
+                                       const guint8        * mode,
+                                       guint16               length,
                                        GDestroyNotify        free_func,
                                        GoodixDefaultCallback callback,
                                        gpointer              user_data);
@@ -315,7 +317,8 @@ void goodix_send_mcu_switch_to_fdt_up (FpDevice             *dev,
  * @param user_data
  */
 void goodix_send_mcu_switch_to_fdt_mode (FpDevice             *dev,
-                                         const guint8          mode[13],
+                                         const guint8        * mode,
+                                         guint16               length,
                                          GDestroyNotify        free_func,
                                          GoodixDefaultCallback callback,
                                          gpointer              user_data);

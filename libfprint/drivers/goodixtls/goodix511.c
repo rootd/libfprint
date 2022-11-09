@@ -656,13 +656,13 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:
-      goodix_send_mcu_switch_to_fdt_mode (dev, fdt_switch_state_mode,
+      goodix_send_mcu_switch_to_fdt_mode (dev, fdt_switch_state_mode, sizeof (fdt_switch_state_mode),
                                           NULL,
                                           check_none_cmd, ssm);
       break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
-      goodix_send_mcu_switch_to_fdt_down (dev, fdt_switch_state_mode,
+      goodix_send_mcu_switch_to_fdt_down (dev, fdt_switch_state_mode, sizeof (fdt_switch_state_mode),
                                           NULL,
                                           check_none_cmd, ssm);
       break;
@@ -673,7 +673,7 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       break;
 
     case SCAN_STAGE_SWITCH_TO_FTD_UP:
-      goodix_send_mcu_switch_to_fdt_up (dev, fdt_switch_state_mode,
+      goodix_send_mcu_switch_to_fdt_up (dev, fdt_switch_state_mode, sizeof (fdt_switch_state_mode),
                                         NULL,
                                         check_none_cmd, ssm);
       break;
