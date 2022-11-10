@@ -151,7 +151,7 @@ helper_sources = {
     'aes3k' :
         [ 'drivers/aes3k.c' ],
     'goodixtls' :
-        [ 'drivers/goodixtls/goodix_proto.c', 'drivers/goodixtls/goodix.c', 'drivers/goodixtls/goodixtls.c' ],
+        [ 'drivers/goodixtls/goodix_proto.c', 'drivers/goodixtls/goodix.c', 'drivers/goodixtls/goodixtls.c', 'drivers/goodixtls/goodix5xx.c' ],
     'nss' :
         [ ],
     'udev' :

@@ -23,10 +23,10 @@
 #include "drivers_api.h"
 #include "goodix.h"
 
+#define FPI_TYPE_DEVICE_GOODIXTLS5XX (fpi_device_goodixtls5xx_get_type ())
 
 G_DECLARE_DERIVABLE_TYPE (FpiDeviceGoodixTls5xx, fpi_device_goodixtls5xx, FPI, DEVICE_GOODIXTLS5XX, FpiDeviceGoodixTls);
 
-#define FPI_TYPE_DEVICE_GOODIXTLS5XX (fpi_device_goodixtls5xx_get_type ())
 
 typedef guint16 GoodixTls5xxPix;
 
@@ -45,7 +45,7 @@ typedef struct
   unsigned char * data;
 } GoodixTls5xxImage;
 
-typedef FpImage *(*GoodixTls5xxProcessFrameFn)(GoodixTls5xxPix * pix);
+typedef FpImage *(*GoodixTls5xxProcessFrameFn)(guint8* pix);
 typedef GoodixTls5xxMcuConfig (*GoodixTls5xxGetMcuFn)(void);
 
 struct _FpiDeviceGoodixTls5xxClass

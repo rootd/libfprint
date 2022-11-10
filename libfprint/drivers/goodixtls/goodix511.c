@@ -18,6 +18,7 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
+#include "drivers/goodixtls/goodix5xx.h"
 #include "fp-device.h"
 #include "fp-image-device.h"
 #include "fp-image.h"
@@ -66,11 +67,17 @@ struct _FpiDeviceGoodixTls511
   Goodix511Pix       empty_img[GOODIX511_FRAME_SIZE];
 };
 
+/*G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,*/
+                      /*DEVICE_GOODIXTLS511, FpiDeviceGoodixTls);*/
+
+/*G_DEFINE_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511,*/
+               /*FPI_TYPE_DEVICE_GOODIXTLS);*/
+
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,
-                      DEVICE_GOODIXTLS511, FpiDeviceGoodixTls);
+                      DEVICE_GOODIXTLS511, FpiDeviceGoodixTls5xx);
 
 G_DEFINE_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511,
-               FPI_TYPE_DEVICE_GOODIXTLS);
+               FPI_TYPE_DEVICE_GOODIXTLS5XX);
 
 // ---- ACTIVE SECTION START ----
 
@@ -632,76 +639,6 @@ const guint8 fdt_switch_state_mode[] = {
   0xb7,
 };
 
-static void
-query_mcu_state_cb (FpDevice * dev, guchar * mcu_state, guint16 len,
-                    gpointer ssm, GError * error)
-{
-  if (error)
-    {
-      fpi_ssm_mark_failed (ssm, error);
-      return;
-    }
-  fpi_ssm_next_state (ssm);
-}
-
-static void
-scan_run_state (FpiSsm * ssm, FpDevice * dev)
-{
-  FpImageDevice *img_dev = FP_IMAGE_DEVICE (dev);
-
-  switch (fpi_ssm_get_cur_state (ssm))
-    {
-    case SCAN_STAGE_QUERY_MCU:
-      goodix_send_query_mcu_state (dev, query_mcu_state_cb, ssm);
-      break;
-
-    case SCAN_STAGE_SWITCH_TO_FDT_MODE:
-      goodix_send_mcu_switch_to_fdt_mode (dev, fdt_switch_state_mode, sizeof (fdt_switch_state_mode),
-                                          NULL,
-                                          check_none_cmd, ssm);
-      break;
-
-    case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
-      goodix_send_mcu_switch_to_fdt_down (dev, fdt_switch_state_mode, sizeof (fdt_switch_state_mode),
-                                          NULL,
-                                          check_none_cmd, ssm);
-      break;
-
-    case SCAN_STAGE_GET_IMG:
-      fpi_image_device_report_finger_status (img_dev, TRUE);
-      scan_get_img (dev, ssm);
-      break;
-
-    case SCAN_STAGE_SWITCH_TO_FTD_UP:
-      goodix_send_mcu_switch_to_fdt_up (dev, fdt_switch_state_mode, sizeof (fdt_switch_state_mode),
-                                        NULL,
-                                        check_none_cmd, ssm);
-      break;
-
-    case SCAN_STAGE_SWITCH_TO_FTD_DONE:
-      fpi_image_device_report_finger_status (img_dev, FALSE);
-      break;
-    }
-}
-
-static void
-scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
-{
-  if (error)
-    {
-      fp_err ("failed to scan: %s (code: %d)", error->message, error->code);
-      fpi_image_device_session_error (FP_IMAGE_DEVICE (dev), error);
-      return;
-    }
-  fp_dbg ("finished scan");
-}
-
-static void
-scan_start (FpiDeviceGoodixTls511 *dev)
-{
-  fpi_ssm_start (fpi_ssm_new (FP_DEVICE (dev), scan_run_state, SCAN_STAGE_NUM),
-                 scan_complete);
-}
 
 // ---- SCAN SECTION END ----
 
@@ -754,7 +691,7 @@ dev_change_state (FpImageDevice *img_dev, FpiImageDeviceState state)
   G_DEBUG_HERE ();
 
   if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
-    scan_start (self);
+    goodixtls5xx_scan_start(FP_DEVICE(img_dev));
 }
 
 static void
@@ -782,6 +719,27 @@ fpi_device_goodixtls511_init (FpiDeviceGoodixTls511 *self)
 {
   self->frames = g_slist_alloc ();
 }
+static GoodixTls5xxMcuConfig get_mcu_config() {
+  GoodixTls5xxMcuConfig cfg;
+  cfg.free_fn = NULL;
+  cfg.data = fdt_switch_state_mode;
+  cfg.data_len = sizeof(fdt_switch_state_mode);
+  return cfg;
+}
+
+static FpImage* crop_frame(guint8* frame) {
+  FpImage* img = fp_image_new(GOODIX511_WIDTH, GOODIX511_HEIGHT);
+  img->flags |= FPI_IMAGE_PARTIAL;
+  for (int y = 0; y != GOODIX511_HEIGHT; ++y)
+    {
+      for (int x = 0; x != GOODIX511_WIDTH; ++x)
+        {
+          const int idx = x + y * GOODIX511_SCAN_WIDTH;
+          img->data[x + y * GOODIX511_WIDTH] = frame[idx];
+        }
+    }
+    return img;
+}
 
 static void
 fpi_device_goodixtls511_class_init (FpiDeviceGoodixTls511Class * class)
@@ -789,6 +747,12 @@ fpi_device_goodixtls511_class_init (FpiDeviceGoodixTls511Class * class)
   FpiDeviceGoodixTlsClass * gx_class = FPI_DEVICE_GOODIXTLS_CLASS (class);
   FpDeviceClass * dev_class = FP_DEVICE_CLASS (class);
   FpImageDeviceClass * img_dev_class = FP_IMAGE_DEVICE_CLASS (class);
+  FpiDeviceGoodixTls5xxClass * xx_cls = FPI_DEVICE_GOODIXTLS5XX_CLASS (class);
+
+  xx_cls->get_mcu_cfg = get_mcu_config;
+  xx_cls->process_frame = crop_frame;
+  xx_cls->scan_height = GOODIX511_HEIGHT;
+  xx_cls->scan_width = GOODIX511_SCAN_WIDTH;
 
   gx_class->interface = GOODIX_511_INTERFACE;
   gx_class->ep_in = GOODIX_511_EP_IN;

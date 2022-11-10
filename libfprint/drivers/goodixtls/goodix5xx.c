@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+//
+#define FP_COMPONENT "goodixtls5xx"
 
 #include "drivers/goodixtls/goodix5xx.h"
 #include "drivers_api.h"
@@ -26,11 +28,10 @@
 typedef struct
 {
 
-} FpiDeviceGoodixTlsPrivate;
+} FpiDeviceGoodixTls5xxPrivate;
 
-G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls, fpi_device_goodixtls5xx, FPI_TYPE_DEVICE_GOODIXTLS5XX)
+G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls5xx, fpi_device_goodixtls5xx, FPI_TYPE_DEVICE_GOODIXTLS)
 
-#pragma region "constants"
 
 enum SCAN_STAGES {
   SCAN_STAGE_QUERY_MCU,
@@ -43,9 +44,7 @@ enum SCAN_STAGES {
   SCAN_STAGE_NUM,
 };
 
-#pragma endregion
 
-#pragma region "check callbacks"
 
 static void
 check_none_cmd (FpDevice *dev, guint8 *data, guint16 len,
@@ -59,9 +58,7 @@ check_none_cmd (FpDevice *dev, guint8 *data, guint16 len,
   fpi_ssm_next_state (ssm);
 }
 
-#pragma endregion
 
-#pragma region "scan"
 
 static void
 query_mcu_state_cb (FpDevice * dev, guchar * mcu_state, guint16 len,
@@ -73,6 +70,40 @@ query_mcu_state_cb (FpDevice * dev, guchar * mcu_state, guint16 len,
       return;
     }
   fpi_ssm_next_state (ssm);
+}
+
+/**
+ * @brief Squashes the 12 bit pixels of a raw frame into the 4 bit pixels used
+ * by libfprint.
+ * @details Borrowed from the elan driver. We reduce frames to
+ * within the max and min.
+ *
+ * @param frame
+ * @param squashed
+ */
+static void
+squash_frame_linear (GoodixTls5xxPix*frame, guint8 *squashed, guint16 frame_size)
+{
+  GoodixTls5xxPix min = 0xffff;
+  GoodixTls5xxPix max = 0;
+
+  for (int i = 0; i != frame_size; ++i)
+    {
+      const GoodixTls5xxPix pix = frame[i];
+      if (pix < min)
+        min = pix;
+      if (pix > max)
+        max = pix;
+    }
+
+  for (int i = 0; i != frame_size; ++i)
+    {
+      const GoodixTls5xxPix pix = frame[i];
+      if (pix - min == 0 || max - min == 0)
+        squashed[i] = 0;
+      else
+        squashed[i] = (pix - min) * 0xff / (max - min);
+    }
 }
 
 static void
@@ -90,7 +121,10 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   GoodixTls5xxPix * raw_frame = malloc ((cls->scan_width * cls->scan_height) * sizeof (GoodixTls5xxPix));
   goodixtls5xx_decode_frame (raw_frame, cls->scan_height * cls->scan_width, data);
-  FpImage * img = cls->process_frame (raw_frame);
+  guint8* squashed = malloc(cls->scan_height * cls->scan_width);
+  squash_frame_linear(raw_frame, squashed, cls->scan_height*cls->scan_width);
+  free(raw_frame);
+  FpImage * img = cls->process_frame (squashed);
 
   fpi_image_device_image_captured (img_dev, img);
 
@@ -159,7 +193,6 @@ scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
   fp_dbg ("finished scan");
 }
 
-#pragma endregion
 
 void
 goodixtls5xx_scan_start (FpDevice * dev)
@@ -180,4 +213,19 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
       *pix++ = ((chunk[5] & 0xf) << 8) + chunk[2];
       *pix++ = (chunk[4] << 4) + (chunk[5] >> 4);
     }
+}
+
+void fpi_device_goodixtls5xx_class_init(FpiDeviceGoodixTls5xxClass* self) {
+  self->get_mcu_cfg = NULL;
+  self->process_frame = NULL;
+  self->scan_height = 0;
+  self->scan_width = 0;
+}
+
+void fpi_device_goodixtls5xx_init(FpiDeviceGoodixTls5xx* self) {
+  FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (self);
+  cls->get_mcu_cfg = NULL;
+  cls->process_frame = NULL;
+  cls->scan_height = 0;
+  cls->scan_width = 0;
 }
