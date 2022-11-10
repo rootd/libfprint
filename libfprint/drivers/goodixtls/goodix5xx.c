@@ -23,6 +23,7 @@
 #include "drivers/goodixtls/goodix5xx.h"
 #include "drivers_api.h"
 #include "goodix.h"
+#include <stdio.h>
 
 
 typedef struct
@@ -82,7 +83,7 @@ query_mcu_state_cb (FpDevice * dev, guchar * mcu_state, guint16 len,
  * @param squashed
  */
 static void
-squash_frame_linear (GoodixTls5xxPix*frame, guint8 *squashed, guint16 frame_size)
+squash_frame_linear (GoodixTls5xxPix *frame, guint8 *squashed, guint16 frame_size)
 {
   GoodixTls5xxPix min = 0xffff;
   GoodixTls5xxPix max = 0;
@@ -119,11 +120,11 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
   FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
   FpImageDevice * img_dev = FP_IMAGE_DEVICE (dev);
 
-  GoodixTls5xxPix * raw_frame = malloc ((cls->scan_width * cls->scan_height) * sizeof (GoodixTls5xxPix));
-  goodixtls5xx_decode_frame (raw_frame, cls->scan_height * cls->scan_width, data);
-  guint8* squashed = malloc(cls->scan_height * cls->scan_width);
-  squash_frame_linear(raw_frame, squashed, cls->scan_height*cls->scan_width);
-  free(raw_frame);
+  GoodixTls5xxPix * raw_frame = calloc (cls->scan_width * cls->scan_height, sizeof (GoodixTls5xxPix));
+  goodixtls5xx_decode_frame (raw_frame, len, data);
+  guint8 * squashed = calloc (cls->scan_height * cls->scan_width, 1);
+  squash_frame_linear (raw_frame, squashed, cls->scan_height * cls->scan_width);
+  free (raw_frame);
   FpImage * img = cls->process_frame (squashed);
 
   fpi_image_device_image_captured (img_dev, img);
@@ -195,9 +196,9 @@ scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
 
 
 void
-goodixtls5xx_scan_start (FpDevice * dev)
+goodixtls5xx_scan_start (FpiDeviceGoodixTls5xx * dev)
 {
-  fpi_ssm_start (fpi_ssm_new (dev, scan_run_state, SCAN_STAGE_NUM), scan_complete);
+  fpi_ssm_start (fpi_ssm_new (FP_DEVICE (dev), scan_run_state, SCAN_STAGE_NUM), scan_complete);
 }
 
 void
@@ -215,17 +216,59 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
     }
 }
 
-void fpi_device_goodixtls5xx_class_init(FpiDeviceGoodixTls5xxClass* self) {
+void
+fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
+{
   self->get_mcu_cfg = NULL;
   self->process_frame = NULL;
   self->scan_height = 0;
   self->scan_width = 0;
 }
 
-void fpi_device_goodixtls5xx_init(FpiDeviceGoodixTls5xx* self) {
+void
+fpi_device_goodixtls5xx_init (FpiDeviceGoodixTls5xx * self)
+{
   FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (self);
+
   cls->get_mcu_cfg = NULL;
   cls->process_frame = NULL;
   cls->scan_height = 0;
   cls->scan_width = 0;
+}
+
+gboolean
+goodixtls5xx_save_image_to_pgm (FpImage *img, const char *path)
+{
+  FILE *fd = fopen (path, "w");
+  size_t write_size;
+  const guchar *data = fp_image_get_data (img, &write_size);
+  int r;
+
+  if (!fd)
+    {
+      g_warning ("could not open '%s' for writing: %d", path, errno);
+      return FALSE;
+    }
+
+  r = fprintf (fd, "P5 %d %d 255\n", fp_image_get_width (img),
+               fp_image_get_height (img));
+  if (r < 0)
+    {
+      fclose (fd);
+      g_critical ("pgm header write failed, error %d", r);
+      return FALSE;
+    }
+
+  r = fwrite (data, 1, write_size, fd);
+  if (r < write_size)
+    {
+      fclose (fd);
+      g_critical ("short write (%d)", r);
+      return FALSE;
+    }
+
+  fclose (fd);
+  g_debug ("written to '%s'", path);
+
+  return TRUE;
 }

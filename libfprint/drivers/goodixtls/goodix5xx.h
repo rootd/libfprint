@@ -45,7 +45,7 @@ typedef struct
   unsigned char * data;
 } GoodixTls5xxImage;
 
-typedef FpImage *(*GoodixTls5xxProcessFrameFn)(guint8* pix);
+typedef FpImage *(*GoodixTls5xxProcessFrameFn)(guint8 * pix);
 typedef GoodixTls5xxMcuConfig (*GoodixTls5xxGetMcuFn)(void);
 
 struct _FpiDeviceGoodixTls5xxClass
@@ -60,8 +60,12 @@ struct _FpiDeviceGoodixTls5xxClass
 };
 
 
-void goodixtls5xx_scan_start (FpDevice * dev);
+void goodixtls5xx_scan_start (FpiDeviceGoodixTls5xx * dev);
 
 void goodixtls5xx_decode_frame (GoodixTls5xxPix * frame,
                                 guint32           frame_size,
                                 const guint8     *raw_frame);
+
+
+gboolean goodixtls5xx_save_image_to_pgm (FpImage    *img,
+                                         const char *path);

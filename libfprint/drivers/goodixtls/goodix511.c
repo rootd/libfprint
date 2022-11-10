@@ -68,10 +68,10 @@ struct _FpiDeviceGoodixTls511
 };
 
 /*G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,*/
-                      /*DEVICE_GOODIXTLS511, FpiDeviceGoodixTls);*/
+/*DEVICE_GOODIXTLS511, FpiDeviceGoodixTls);*/
 
 /*G_DEFINE_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511,*/
-               /*FPI_TYPE_DEVICE_GOODIXTLS);*/
+/*FPI_TYPE_DEVICE_GOODIXTLS);*/
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,
                       DEVICE_GOODIXTLS511, FpiDeviceGoodixTls5xx);
@@ -94,45 +94,6 @@ enum activate_states {
   ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY,
   ACTIVATE_NUM_STATES,
 };
-
-#ifdef GOODIX511_DUMP_FRAMES
-static gboolean
-save_image_to_pgm (FpImage *img, const char *path)
-{
-  FILE *fd = fopen (path, "w");
-  size_t write_size;
-  const guchar *data = fp_image_get_data (img, &write_size);
-  int r;
-
-  if (!fd)
-    {
-      g_warning ("could not open '%s' for writing: %d", path, errno);
-      return FALSE;
-    }
-
-  r = fprintf (fd, "P5 %d %d 255\n", fp_image_get_width (img),
-               fp_image_get_height (img));
-  if (r < 0)
-    {
-      fclose (fd);
-      g_critical ("pgm header write failed, error %d", r);
-      return FALSE;
-    }
-
-  r = fwrite (data, 1, write_size, fd);
-  if (r < write_size)
-    {
-      fclose (fd);
-      g_critical ("short write (%d)", r);
-      return FALSE;
-    }
-
-  fclose (fd);
-  g_debug ("written to '%s'", path);
-
-  return TRUE;
-}
-#endif
 
 static void
 check_none (FpDevice *dev, gpointer user_data, GError *error)
@@ -686,12 +647,10 @@ dev_activate (FpImageDevice *img_dev)
 static void
 dev_change_state (FpImageDevice *img_dev, FpiImageDeviceState state)
 {
-  FpiDeviceGoodixTls511 *self = FPI_DEVICE_GOODIXTLS511 (img_dev);
-
   G_DEBUG_HERE ();
 
   if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
-    goodixtls5xx_scan_start(FP_DEVICE(img_dev));
+    goodixtls5xx_scan_start (FPI_DEVICE_GOODIXTLS5XX (img_dev));
 }
 
 static void
@@ -719,16 +678,22 @@ fpi_device_goodixtls511_init (FpiDeviceGoodixTls511 *self)
 {
   self->frames = g_slist_alloc ();
 }
-static GoodixTls5xxMcuConfig get_mcu_config() {
+static GoodixTls5xxMcuConfig
+get_mcu_config ()
+{
   GoodixTls5xxMcuConfig cfg;
+
   cfg.free_fn = NULL;
   cfg.data = fdt_switch_state_mode;
-  cfg.data_len = sizeof(fdt_switch_state_mode);
+  cfg.data_len = sizeof (fdt_switch_state_mode);
   return cfg;
 }
 
-static FpImage* crop_frame(guint8* frame) {
-  FpImage* img = fp_image_new(GOODIX511_WIDTH, GOODIX511_HEIGHT);
+static FpImage *
+crop_frame (guint8 * frame)
+{
+  FpImage * img = fp_image_new (GOODIX511_WIDTH, GOODIX511_HEIGHT);
+
   img->flags |= FPI_IMAGE_PARTIAL;
   for (int y = 0; y != GOODIX511_HEIGHT; ++y)
     {
@@ -738,7 +703,7 @@ static FpImage* crop_frame(guint8* frame) {
           img->data[x + y * GOODIX511_WIDTH] = frame[idx];
         }
     }
-    return img;
+  return img;
 }
 
 static void
