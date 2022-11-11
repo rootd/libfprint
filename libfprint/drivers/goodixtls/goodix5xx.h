@@ -47,6 +47,7 @@ typedef struct
 
 typedef FpImage *(*GoodixTls5xxProcessFrameFn)(guint8 * pix);
 typedef GoodixTls5xxMcuConfig (*GoodixTls5xxGetMcuFn)(void);
+typedef void (*GoodixTls5xxResetStateFn)(FpDevice *);
 
 struct _FpiDeviceGoodixTls5xxClass
 {
@@ -54,11 +55,64 @@ struct _FpiDeviceGoodixTls5xxClass
 
   GoodixTls5xxGetMcuFn       get_mcu_cfg;
   GoodixTls5xxProcessFrameFn process_frame;
+  GoodixTls5xxResetStateFn   reset_state;
 
   guint16                    scan_width;
   guint16                    scan_height;
+
+  const char               * firmware_version; ///< only needed if goodixtls5xx_check_firmware_version() is used
+
+  /// only needed if goodixtls5xx_check_preset_psk_read() is used
+  int            psk_flags;
+  guint16        psk_len;
+  const guint8 * psk;
+
+  int            reset_number; ///< only needed if goodixtls5xx_check_reset() is used
 };
 
+void goodixtls5xx_check_reset (FpDevice *dev,
+                               gboolean  success,
+                               guint16   number,
+                               gpointer  user_data,
+                               GError   *error);
+
+void goodixtls5xx_check_firmware_version (FpDevice *dev,
+                                          gchar    *firmware,
+                                          gpointer  user_data,
+                                          GError   *error);
+
+
+void goodixtls5xx_check_preset_psk_read (FpDevice *dev,
+                                         gboolean  success,
+                                         guint32   flags,
+                                         guint8   *psk,
+                                         guint16   length,
+                                         gpointer  user_data,
+                                         GError   *error);
+
+void goodixtls5xx_check_idle (FpDevice *dev,
+                              gpointer  user_data,
+                              GError   *err);
+
+void goodixtls5xx_check_config_upload (FpDevice *dev,
+                                       gboolean  success,
+                                       gpointer  user_data,
+                                       GError   *error);
+
+void goodixtls5xx_check_powerdown_scan_freq (FpDevice *dev,
+                                             gboolean  success,
+                                             gpointer  user_data,
+                                             GError   *error);
+
+void goodixtls5xx_check_none (FpDevice *dev,
+                              gpointer  user_data,
+                              GError   *error);
+
+void goodixtls5xx_check_none_cmd (FpDevice *dev,
+                                  guint8   *data,
+                                  guint16   len,
+                                  gpointer  ssm,
+                                  GError   *err);
 
 void goodixtls5xx_scan_start (FpiDeviceGoodixTls5xx * dev);
 
@@ -67,5 +121,20 @@ void goodixtls5xx_decode_frame (GoodixTls5xxPix * frame,
                                 const guint8     *raw_frame);
 
 
+void goodixtls5xx_init_tls (FpDevice * dev);
+
 gboolean goodixtls5xx_save_image_to_pgm (FpImage    *img,
                                          const char *path);
+
+/**
+ * @brief Squashes the 12 bit pixels of a raw frame into the 4 bit pixels used
+ * by libfprint.
+ * @details Borrowed from the elan driver. We reduce frames to
+ * within the max and min.
+ *
+ * @param frame
+ * @param squashed
+ */
+void goodixtls5xx_squash_frame_linear (GoodixTls5xxPix *frame,
+                                       guint8          *squashed,
+                                       guint16          frame_size);
