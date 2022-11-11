@@ -27,6 +27,21 @@
 
 G_DECLARE_DERIVABLE_TYPE (FpiDeviceGoodixTls5xx, fpi_device_goodixtls5xx, FPI, DEVICE_GOODIXTLS5XX, FpiDeviceGoodixTls);
 
+/**
+ * @brief API for the common parts of communication between the goodixtls 5xx device
+ * @details This API is designed to make it easier to write and maintain
+ * drivers for the goodixtls 5xx (usb) devices. For an example out goodix511.c.
+ *
+ * @par The bare minimum needed is to provide get_mcu_cfg and process_frame to
+ * FpiDeviceGoodixTls5xxClass and activate to FpImageDeviceClass (activate
+ * varies from device to device)
+ *
+ * @par There are also quite a few helper functions in the goodixtls5xx_*
+ * namespace, the check functions expect a state machine as the user data and
+ * will advance it or mark it as failed as appropriate
+ * @struct FpiDeviceGoodixTls5xx
+ *
+ */
 
 typedef guint16 GoodixTls5xxPix;
 
