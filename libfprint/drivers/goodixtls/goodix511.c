@@ -61,17 +61,7 @@ struct _FpiDeviceGoodixTls511
   FpiDeviceGoodixTls parent;
 
   guint8            *otp;
-
-  GSList            *frames;
-
-  Goodix511Pix       empty_img[GOODIX511_FRAME_SIZE];
 };
-
-/*G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,*/
-/*DEVICE_GOODIXTLS511, FpiDeviceGoodixTls);*/
-
-/*G_DEFINE_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511,*/
-/*FPI_TYPE_DEVICE_GOODIXTLS);*/
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls511, fpi_device_goodixtls511, FPI,
                       DEVICE_GOODIXTLS511, FpiDeviceGoodixTls5xx);
@@ -94,172 +84,6 @@ enum activate_states {
   ACTIVATE_SET_POWERDOWN_SCAN_FREQUENCY,
   ACTIVATE_NUM_STATES,
 };
-
-static void
-check_none (FpDevice *dev, gpointer user_data, GError *error)
-{
-  if (error)
-    {
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  fpi_ssm_next_state (user_data);
-}
-
-static void
-check_firmware_version (FpDevice *dev, gchar *firmware,
-                        gpointer user_data, GError *error)
-{
-  if (error)
-    {
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  fp_dbg ("Device firmware: \"%s\"", firmware);
-
-  if (strcmp (firmware, GOODIX_511_FIRMWARE_VERSION))
-    {
-      g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device firmware: \"%s\"", firmware);
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  fpi_ssm_next_state (user_data);
-}
-
-static void
-check_reset (FpDevice *dev, gboolean success, guint16 number,
-             gpointer user_data, GError *error)
-{
-  if (error)
-    {
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  if (!success)
-    {
-      g_set_error (&error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                   "Failed to reset device");
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  fp_dbg ("Device reset number: %d", number);
-
-  if (number != GOODIX_511_RESET_NUMBER)
-    {
-      g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device reset number: %d", number);
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  fpi_ssm_next_state (user_data);
-}
-
-static void
-check_preset_psk_read (FpDevice *dev, gboolean success,
-                       guint32 flags, guint8 *psk, guint16 length,
-                       gpointer user_data, GError *error)
-{
-  g_autofree gchar *psk_str = data_to_str (psk, length);
-
-  if (error)
-    {
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  if (!success)
-    {
-      g_set_error (&error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                   "Failed to read PSK from device");
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  fp_dbg ("Device PSK: 0x%s", psk_str);
-  fp_dbg ("Device PSK flags: 0x%08x", flags);
-
-  if (flags != GOODIX_511_PSK_FLAGS)
-    {
-      g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device PSK flags: 0x%08x", flags);
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  if (length != sizeof (goodix_511_psk_0))
-    {
-      g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device PSK: 0x%s", psk_str);
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  if (memcmp (psk, goodix_511_psk_0, sizeof (goodix_511_psk_0)))
-    {
-      g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device PSK: 0x%s", psk_str);
-      fpi_ssm_mark_failed (user_data, error);
-      return;
-    }
-
-  fpi_ssm_next_state (user_data);
-}
-static void
-check_idle (FpDevice *dev, gpointer user_data, GError *err)
-{
-
-  if (err)
-    {
-      fpi_ssm_mark_failed (user_data, err);
-      return;
-    }
-  fpi_ssm_next_state (user_data);
-}
-static void
-check_config_upload (FpDevice *dev, gboolean success,
-                     gpointer user_data, GError *error)
-{
-  if (error)
-    {
-      fpi_ssm_mark_failed (user_data, error);
-    }
-  else if (!success)
-    {
-      fpi_ssm_mark_failed (user_data,
-                           g_error_new (FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO,
-                                        "failed to upload mcu config"));
-    }
-  else
-    {
-      fpi_ssm_next_state (user_data);
-    }
-}
-static void
-check_powerdown_scan_freq (FpDevice *dev, gboolean success,
-                           gpointer user_data, GError *error)
-{
-  if (error)
-    {
-      fpi_ssm_mark_failed (user_data, error);
-    }
-  else if (!success)
-    {
-      fpi_ssm_mark_failed (user_data,
-                           g_error_new (FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO,
-                                        "failed to set powerdown freq"));
-    }
-  else
-    {
-      fpi_ssm_next_state (user_data);
-    }
-}
 
 enum otp_write_states {
   OTP_WRITE_1,
@@ -434,17 +258,12 @@ dev_activate (FpImageDevice *img_dev)
                  activate_complete);
 }
 
-static void
-goodix511_reset_state (FpiDeviceGoodixTls511 *self)
-{
-}
 
 // ---- DEV SECTION END ----
 
 static void
 fpi_device_goodixtls511_init (FpiDeviceGoodixTls511 *self)
 {
-  self->frames = g_slist_alloc ();
 }
 static GoodixTls5xxMcuConfig
 get_mcu_config ()
@@ -501,7 +320,6 @@ fpi_device_goodixtls511_class_init (FpiDeviceGoodixTls511Class * class)
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = id_table;
   dev_class->nr_enroll_stages = 10;
-  // dev_class->enroll = enroll;
 
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
 
