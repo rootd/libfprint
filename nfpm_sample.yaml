@@ -1,0 +1,90 @@
+# check https://nfpm.goreleaser.com/configuration for detailed usage
+#
+name: "libfprint"
+arch: "amd64"
+platform: "linux"
+version: "1.94.4"
+prerelease: goodixtls-COMMITID
+section: "default"
+priority: "extra"
+replaces:
+- libfprint
+maintainer: "Alexander Meiler <alex.meiler@protonmail.com>"
+description: |
+  This is a community focused on implementing drivers for Goodix devices on Linux.
+vendor: "Goodix Fingerprint Linux Development"
+homepage: "https://github.com/goodix-fp-linux-dev"
+license: "GNU LGPL 2.1"
+contents:
+- src: ./build/libfprint/fp-enums.h
+  dst: /usr/include/libfprint-2/fp-enums.h
+
+- src: ./build/libfprint/libfprint-2.so.2.0.0
+  dst: /usr/lib64/libfprint-2.so.2.0.0
+
+- src: ./build/libfprint/70-libfprint-2.rules
+  dst: /usr/lib/udev/rules.d/70-libfprint-2.rules
+
+- src: ./build/libfprint/FPrint-2.0.gir
+  dst: /usr/share/gir-1.0/FPrint-2.0.gir
+
+- src: ./build/libfprint/FPrint-2.0.typelib
+  dst: /usr/lib64/girepository-1.0/FPrint-2.0.typelib
+
+- src: ./libfprint/fprint.h  
+  dst: /usr/include/libfprint-2/fprint.h  
+
+- src: ./libfprint/fp-context.h  
+  dst: /usr/include/libfprint-2/fp-context.h  
+
+- src: ./libfprint/fp-device.h  
+  dst: /usr/include/libfprint-2/fp-device.h  
+
+- src: ./libfprint/fp-image-device.h  
+  dst: /usr/include/libfprint-2/fp-image-device.h  
+
+- src: ./libfprint/fp-image.h  
+  dst: /usr/include/libfprint-2/fp-image.h  
+
+- src: ./libfprint/fp-print.h  
+  dst: /usr/include/libfprint-2/fp-print.h            
+  
+- src: ./build/meson-private/libfprint-2.pc
+  dst: /usr/lib64/pkgconfig/libfprint-2.pc
+
+- src: ./build/libfprint/libfprint-2.so.2.0.0
+  dst: /usr/lib64/libfprint-2.so.2
+  type: symlink
+  
+- src: ./build/libfprint/libfprint-2.so.2.0.0
+  dst: /usr/lib64/libfprint-2.so
+  type: symlink
+
+overrides:
+  deb:
+    depends:
+      - libgudev
+      - libgusb
+      - nss
+      - openssl
+      - pixman
+  rpm:
+    provides:
+      - libfprint
+      - libfprint(aarch-64)
+      - libfprint-2.so.2()(64bit)
+      - libfprint-2.so.2(LIBFPRINT_2.0.0)(64bit)
+
+    depends:
+      - libgudev
+      - libgusb
+      - nss
+      - openssl
+      - pixman
+  archlinux:
+    depends:
+      - libgudev
+      - libgusb
+      - nss
+      - openssl
+      - pixman
