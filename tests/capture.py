@@ -1,15 +1,10 @@
 #!/usr/bin/python3
 
-import cairo
-import sys
-import traceback
 import gi
-
 gi.require_version('FPrint', '2.0')
 from gi.repository import FPrint, GLib
-
-# Exit with error on any exception, included those happening in async callbacks
-sys.excepthook = lambda *args: (traceback.print_exception(*args), sys.exit(1))
+import cairo
+import sys
 
 if len(sys.argv) != 2:
     print("Please specify exactly one argument, the output location for the capture image")

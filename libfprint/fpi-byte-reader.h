@@ -22,7 +22,6 @@
 #pragma once
 
 #include <glib.h>
-#include "fpi-compat.h"
 #include "fpi-byte-utils.h"
 
 G_BEGIN_DECLS
@@ -361,7 +360,7 @@ static inline guint8 *
 fpi_byte_reader_dup_data_unchecked (FpiByteReader * reader, guint size)
 {
   gconstpointer data = fpi_byte_reader_get_data_unchecked (reader, size);
-  return (guint8 *) g_memdup2 (data, size);
+  return (guint8 *) g_memdup (data, size);
 }
 
 /* Unchecked variants that should not be used */

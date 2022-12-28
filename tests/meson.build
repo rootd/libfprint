@@ -39,7 +39,6 @@ drivers_tests = [
     'goodixmoc',
     'nb1010',
     'egis0570',
-    'fpcmoc',
 ]
 
 if get_option('introspection')
@@ -58,17 +57,16 @@ if get_option('introspection')
         'virtual-device',
     ]
 
-    python3 = find_program('python3')
     unittest_inspector = find_program('unittest_inspector.py')
-    umockdev_test = find_program('umockdev-test.py')
 
     foreach vdtest: virtual_devices_tests
         driver_name = '_'.join(vdtest.split('-'))
         if driver_name in drivers
+            python3 = find_program('python3')
             base_args = files(vdtest + '.py')
             suite = ['virtual-driver']
 
-            r = run_command(unittest_inspector, files(vdtest + '.py'), check: true)
+            r = run_command(unittest_inspector, files(vdtest + '.py'))
             unit_tests = r.stdout().strip().split('\n')
 
             if r.returncode() == 0 and unit_tests.length() > 0
@@ -108,11 +106,8 @@ if get_option('introspection')
         if (driver_name in supported_drivers and
             gusb_dep.version().version_compare('>= 0.3.0'))
             test(driver_test,
-                python3,
-                args: [
-                    umockdev_test.full_path(),
-                    meson.current_source_dir() / driver_test,
-                ],
+                find_program('umockdev-test.py'),
+                args: join_paths(meson.current_source_dir(), driver_test),
                 env: driver_envs,
                 suite: ['drivers'],
                 timeout: 15,
@@ -211,7 +206,6 @@ envs.set('UDEV_HWDB', udev_hwdb.full_path())
 envs.set('UDEV_HWDB_CHECK_CONTENTS', default_drivers_are_enabled ? '1' : '0')
 test('udev-hwdb',
      find_program('test-generated-hwdb.sh'),
-     depends: udev_hwdb,
      env: envs)
 
 gdb = find_program('gdb', required: false)
@@ -234,26 +228,17 @@ valgrind = find_program('valgrind', required: false)
 if valgrind.found()
     glib_share = glib_dep.get_pkgconfig_variable('prefix') / 'share' / glib_dep.name()
     glib_suppressions = glib_share + '/valgrind/glib.supp'
-    libfprint_suppressions = '@0@/@1@'.format(meson.source_root(),
-        files('libfprint.supp')[0])
     python_suppressions = '@0@/@1@'.format(meson.source_root(),
         files('valgrind-python.supp')[0])
     libfprint_wrapper = [
         valgrind.path(),
         '--tool=memcheck',
         '--leak-check=full',
-        '--leak-resolution=high',
-        '--error-exitcode=1',
-        '--errors-for-leak-kinds=definite',
-        '--track-origins=yes',
-        '--show-leak-kinds=definite,possible',
-        '--show-error-list=yes',
-        '--suppressions=' + libfprint_suppressions,
         '--suppressions=' + glib_suppressions,
         '--suppressions=' + python_suppressions,
     ]
     add_test_setup('valgrind',
-        timeout_multiplier: 15,
+        timeout_multiplier: 10,
         exe_wrapper: libfprint_wrapper,
         env: [
             'G_SLICE=always-malloc',

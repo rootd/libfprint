@@ -217,6 +217,8 @@ struct xytq_struct {
 /**************************************************************************/
 /* Globals supporting command line options */
 extern int verbose_threshold;
+/* Global supporting error reporting */
+extern FILE *stderr;
 
 /**************************************************************************/
 /* In: BZ_GBLS.C */
