@@ -1,6 +1,6 @@
 # check https://nfpm.goreleaser.com/configuration for detailed usage
 #
-name: "libfprint"
+name: "libfprint-2-2"
 arch: "amd64"
 platform: "linux"
 version: "1.94.4"
@@ -9,6 +9,7 @@ section: "default"
 priority: "extra"
 replaces:
   - libfprint-2-2
+  - libfprint
 provides:
   - libfprint
   - libfprint-2.so
