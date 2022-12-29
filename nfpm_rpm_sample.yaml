@@ -5,6 +5,7 @@ arch: "amd64"
 platform: "linux"
 version: "1.94.4"
 prerelease: goodixtls-COMMITID
+epoch: 99999999
 section: "default"
 priority: "extra"
 replaces:
