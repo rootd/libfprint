@@ -9,6 +9,16 @@ section: "default"
 priority: "extra"
 replaces:
   - libfprint
+provides:
+  - libfprint
+  - libfprint-2.so
+
+depends:
+  - libgudev
+  - libgusb
+  - nss
+  - openssl
+  - pixman
 maintainer: "Alexander Meiler <alex.meiler@protonmail.com>, Matthieu CHARETTE <matthieu.charette@gmail.com>"
 description: |
   This is a community implemented driver for Goodix TLS devices on Linux.
@@ -52,49 +62,10 @@ contents:
   - src: ./build/meson-private/libfprint-2.pc
     dst: /usr/lib64/pkgconfig/libfprint-2.pc
 
-  - src: ./build/libfprint/libfprint-2.so.2.0.0
+  - src: /usr/lib64/libfprint-2.so.2.0.0
     dst: /usr/lib64/libfprint-2.so.2
     type: symlink
 
-  - src: ./build/libfprint/libfprint-2.so.2.0.0
+  - src: /usr/lib64/libfprint-2.so.2.0.0
     dst: /usr/lib64/libfprint-2.so
     type: symlink
-
-overrides:
-  deb:
-    provides:
-      - libfprint
-      - libfprint-2.so
-      - libfprint-2-2
-    depends:
-      - libc6
-      - libglib2.0-0
-      - libgudev-1.0-0
-      - libgusb2
-      - libnss3
-      - openssl
-      - libpixman-1-0
-  rpm:
-    provides:
-      - libfprint
-      - libfprint(aarch-64)
-      - libfprint-2.so.2()(64bit)
-      - libfprint-2.so.2(LIBFPRINT_2.0.0)(64bit)
-
-    depends:
-      - libgudev
-      - libgusb
-      - nss
-      - openssl
-      - pixman
-  archlinux:
-    provides:
-      - libfprint
-      - libfprint-2.so
-
-    depends:
-      - libgudev
-      - libgusb
-      - nss
-      - openssl
-      - pixman
