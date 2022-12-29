@@ -53,7 +53,7 @@ jobs:
       - name: Prepare nFPM RPM config
         run: cd /home/runner/work/libfprint/libfprint && cp nfpm_rpm_sample.yaml nfpm_rpm.yaml && sed -i "s/COMMITID/$(git rev-parse --short HEAD)/g" nfpm_rpm.yaml
       - name: Prepare nFPM Arch config
-        run: cd /home/runner/work/libfprint/libfprint && cp nfpm_arch_sample.yaml nfpm_arch.yaml && sed -i "s/COMMITID/$(git rev-parse --short HEAD)/g" nfpm_arch.yaml && mkdir ./output
+        run: cd /home/runner/work/libfprint/libfprint && cp nfpm_arch_sample.yaml nfpm_arch.yaml && sed -i "s/COMMITID/$(git rev-parse --short HEAD)/g" nfpm_arch.yaml
       - name: Generating DEB package
         run: nfpm pkg --packager deb --config ./nfpm_deb.yaml --target ./output/
       - name: Generating RPM package
